@@ -1,2 +1,2 @@
 #define ProjectName "PrusaSlicer Measure & Section"
-#define ProjectVersion "2.9.7.9"
+#define ProjectVersion "2.9.7.10"

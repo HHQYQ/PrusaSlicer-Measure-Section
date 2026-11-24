@@ -6,7 +6,8 @@
 #define slic3r_GUI_ObjectManipulation_hpp_
 
 #include <memory>
-#include <optional>
+#include <map>
+#include <tuple>
 
 #include "GUI_ObjectSettings.hpp"
 #include "GUI_ObjectList.hpp"
@@ -89,14 +90,25 @@ private:
     friend class ManipulationEditor;
     bool is_relative_rotation() const { return m_new_rotate_label_string == "Rotate (relative)"; }
 
+    // A selection refresh resets the editor widgets, while a part's angles follow its model IDs.
+    using RelativeRotationKey = std::tuple<size_t, size_t, ECoordinatesType>;
+    struct RelativeRotation {
+        Vec3d angles;
+        Matrix3d orientation;
+        std::array<wxString, 3> text;
+    };
+    std::map<RelativeRotationKey, RelativeRotation> m_relative_rotations;
+    std::array<wxString, 3> m_new_relative_rotation_text;
+    RelativeRotationKey relative_rotation_key(const Selection& selection) const;
+    static Matrix3d relative_rotation_orientation(const Selection& selection);
+    RelativeRotation* find_relative_rotation(const Selection& selection);
+
     struct Cache
     {
         Vec3d position;
         Vec3d position_rounded;
         Vec3d rotation;
         Vec3d rotation_rounded;
-        Vec3d relative_rotation;
-        std::optional<Matrix3d> relative_rotation_orientation;
         Vec3d scale;
         Vec3d scale_rounded;
         Vec3d size;
@@ -112,8 +124,6 @@ private:
         {
             position = position_rounded = Vec3d(DBL_MAX, DBL_MAX, DBL_MAX);
             rotation = rotation_rounded = Vec3d(DBL_MAX, DBL_MAX, DBL_MAX);
-            relative_rotation.setZero();
-            relative_rotation_orientation.reset();
             scale = scale_rounded = Vec3d(DBL_MAX, DBL_MAX, DBL_MAX);
             size = size_rounded = Vec3d(DBL_MAX, DBL_MAX, DBL_MAX);
             move_label_string = wxString();

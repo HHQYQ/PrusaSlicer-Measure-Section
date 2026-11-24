@@ -686,6 +686,7 @@ void ObjectManipulation::update_ui_from_settings()
 
 void ObjectManipulation::update_settings_value(const Selection& selection)
 {
+    m_new_relative_rotation_text = {};
     if (selection.is_empty()) {
         // No selection, reset the cache.
         reset_settings_value();
@@ -772,15 +773,39 @@ void ObjectManipulation::update_settings_value(const Selection& selection)
     }
 
     if (is_relative_rotation()) {
-        // A rotation made elsewhere starts a new reference for the sidebar.
-        if (m_cache.relative_rotation_orientation &&
-            !selection.get_first_volume()->world_matrix().linear().isApprox(*m_cache.relative_rotation_orientation)) {
-            m_cache.relative_rotation.setZero();
-            m_cache.relative_rotation_orientation.reset();
-            m_cache.rotation_rounded.setConstant(DBL_MAX);
+        if (const auto* saved = find_relative_rotation(selection)) {
+            m_new_rotation = saved->angles;
+            m_new_relative_rotation_text = saved->text;
         }
-        m_new_rotation = m_cache.relative_rotation;
     }
+}
+
+ObjectManipulation::RelativeRotationKey ObjectManipulation::relative_rotation_key(const Selection& selection) const
+{
+    const auto& id = selection.get_first_volume()->geometry_id;
+    return {id.second, selection.get_mode() == Selection::Instance ? 0 : id.first, m_coordinates_type};
+}
+
+Matrix3d ObjectManipulation::relative_rotation_orientation(const Selection& selection)
+{
+    const GLVolume& volume = *selection.get_first_volume();
+    if (selection.get_mode() == Selection::Instance)
+        return volume.get_instance_transformation().get_matrix().linear();
+    return volume.world_matrix().linear();
+}
+
+ObjectManipulation::RelativeRotation* ObjectManipulation::find_relative_rotation(const Selection& selection)
+{
+    auto entry = m_relative_rotations.find(relative_rotation_key(selection));
+    if (entry == m_relative_rotations.end())
+        return nullptr;
+    if (entry->second.orientation.isApprox(relative_rotation_orientation(selection)))
+        return &entry->second;
+
+    // A rotation made elsewhere starts a new reference for this part.
+    m_relative_rotations.erase(entry);
+    m_cache.rotation_rounded.setConstant(DBL_MAX);
+    return nullptr;
 }
 
 void ObjectManipulation::update_if_dirty()
@@ -819,6 +844,8 @@ void ObjectManipulation::update_if_dirty()
 			if (std::abs(cached_rounded(i) - new_rounded) > EPSILON) {
 				cached_rounded(i) = new_rounded;
                 const int id = key_id*3+i;
+                if (key_id == meRotation && !m_new_relative_rotation_text[i].IsEmpty())
+                    new_text = m_new_relative_rotation_text[i];
                 if (m_imperial_units) {
                     double inch_value = new_value(i) * mm_to_in;
                     if (key_id == mePosition)
@@ -1021,14 +1048,15 @@ void ObjectManipulation::change_rotation_value(int axis, double value)
     if (!show_relative && std::abs(m_cache.rotation_rounded(axis) - value) < EPSILON)
         return;
 
-    Vec3d rotation = show_relative ? m_cache.relative_rotation : m_cache.rotation;
-    const double delta = value - rotation(axis);
-    rotation(axis) = value;
-
     GLCanvas3D* canvas = wxGetApp().plater()->canvas3D();
     Selection& selection = canvas->get_selection();
     if (selection.is_empty())
         return;
+
+    const RelativeRotation* saved = show_relative ? find_relative_rotation(selection) : nullptr;
+    const Vec3d previous = show_relative ? (saved ? saved->angles : Vec3d(0., 0., 0.)) : m_cache.rotation;
+    Vec3d rotation = previous;
+    rotation(axis) = value;
 
     TransformationType transformation_type;
     transformation_type.set_relative();
@@ -1041,19 +1069,26 @@ void ObjectManipulation::change_rotation_value(int axis, double value)
     if (is_instance_coordinates())
         transformation_type.set_instance();
 
-    if (std::abs(delta) > EPSILON) {
+    const double delta = value - previous(axis);
+    const bool rotated = show_relative ? delta != 0. : std::abs(delta) > EPSILON;
+    if (rotated) {
         selection.setup_cache();
         if (show_relative) {
-            const Vec3d previous = (M_PI / 180.0) * m_cache.relative_rotation;
-            selection.rotate((M_PI / 180.0) * rotation, transformation_type, &previous);
-            m_cache.relative_rotation = rotation;
-            m_cache.relative_rotation_orientation = selection.get_first_volume()->world_matrix().linear();
+            const Vec3d previous_radians = (M_PI / 180.0) * previous;
+            selection.rotate((M_PI / 180.0) * rotation, transformation_type, &previous_radians);
         } else {
-            selection.rotate((M_PI / 180.0) * (rotation - m_cache.rotation), transformation_type);
+            selection.rotate((M_PI / 180.0) * (rotation - previous), transformation_type);
         }
-        canvas->do_rotate(L("Set Orientation"));
     }
 
+    if (show_relative) {
+        auto& remembered = m_relative_rotations[relative_rotation_key(selection)];
+        remembered.angles = rotation;
+        remembered.orientation = relative_rotation_orientation(selection);
+        remembered.text[axis] = m_editors[3 + axis]->GetValue();
+    }
+    if (rotated)
+        canvas->do_rotate(L("Set Orientation"));
     m_cache.rotation_rounded(axis) = DBL_MAX;
     this->UpdateAndShow(true);
 }
@@ -1213,8 +1248,6 @@ void ObjectManipulation::set_coordinates_type(ECoordinatesType type)
         return;
 
     m_coordinates_type = type;
-    m_cache.relative_rotation.setZero();
-    m_cache.relative_rotation_orientation.reset();
     m_cache.rotation_rounded.setConstant(DBL_MAX);
     m_word_local_combo->SetSelection((int)m_coordinates_type);
     this->UpdateAndShow(true);
