@@ -102,6 +102,7 @@ private:
     RelativeRotationKey relative_rotation_key(const Selection& selection) const;
     static Matrix3d relative_rotation_orientation(const Selection& selection);
     RelativeRotation* find_relative_rotation(const Selection& selection);
+    void set_relative_rotation_reference(const Selection& selection);
 
     struct Cache
     {

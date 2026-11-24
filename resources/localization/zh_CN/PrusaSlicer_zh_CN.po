@@ -29537,3 +29537,6 @@ msgstr "自动朝向并居中"
 
 msgid "Click to rotate 90 degrees. Drag to choose an angle."
 msgstr "单击旋转 90°，拖动可调整角度。"
+
+msgid "Set as rotation reference"
+msgstr "设为旋转基准"

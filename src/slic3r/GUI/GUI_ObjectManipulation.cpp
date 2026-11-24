@@ -544,7 +544,24 @@ ObjectManipulation::ObjectManipulation(wxWindow* parent) :
         canvas->do_rotate(L("Auto orient and center"));
         UpdateAndShow(true);
     });
-    m_main_grid_sizer->Add(auto_orient, 0, wxALIGN_LEFT);
+    auto* set_rotation_reference = new wxButton(parent, wxID_ANY, _L("Set as rotation reference"),
+        wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
+    set_rotation_reference->Bind(wxEVT_UPDATE_UI, [this](wxUpdateUIEvent& e) {
+        const Plater* plater = wxGetApp().plater();
+        const auto* canvas = plater ? plater->canvas3D() : nullptr;
+        e.Enable(canvas && is_enabled() && is_relative_rotation() && !canvas->get_selection().is_empty() &&
+            !canvas->is_dragging() && !canvas->get_gizmos_manager().is_in_editing_mode());
+    });
+    set_rotation_reference->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+        const Selection& selection = wxGetApp().plater()->canvas3D()->get_selection();
+        if (selection.is_empty() || !is_relative_rotation())
+            return;
+        set_relative_rotation_reference(selection);
+    });
+    auto* orientation_actions = new wxBoxSizer(wxVERTICAL);
+    orientation_actions->Add(auto_orient, 0, wxALIGN_LEFT);
+    orientation_actions->Add(set_rotation_reference, 0, wxALIGN_LEFT | wxTOP, 3);
+    m_main_grid_sizer->Add(orientation_actions, 0, wxALIGN_LEFT);
 
     m_og->activate();
     m_og->sizer->Clear(true);
@@ -806,6 +823,14 @@ ObjectManipulation::RelativeRotation* ObjectManipulation::find_relative_rotation
     m_relative_rotations.erase(entry);
     m_cache.rotation_rounded.setConstant(DBL_MAX);
     return nullptr;
+}
+
+void ObjectManipulation::set_relative_rotation_reference(const Selection& selection)
+{
+    m_relative_rotations.erase(relative_rotation_key(selection));
+    m_cache.rotation_rounded.setConstant(DBL_MAX);
+    set_dirty();
+    update_if_dirty();
 }
 
 void ObjectManipulation::update_if_dirty()
