@@ -87,6 +87,8 @@ public:
         Svg,
         Simplify,
         Section,
+        EdgeFinish,
+        Transparency,
         Undefined
     };
 

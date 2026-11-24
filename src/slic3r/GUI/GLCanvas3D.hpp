@@ -698,6 +698,7 @@ public:
     void set_context(wxGLContext* context) { m_context = context; }
 
     wxGLCanvas* get_wxglcanvas() { return m_canvas; }
+    const SceneRaycaster& get_scene_raycaster() const { return m_scene_raycaster; }
 	const wxGLCanvas* get_wxglcanvas() const { return m_canvas; }
 
     wxWindow* get_wxglcanvas_parent();

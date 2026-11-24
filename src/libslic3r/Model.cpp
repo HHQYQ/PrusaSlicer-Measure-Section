@@ -1456,12 +1456,28 @@ void ModelObject::scale_to_fit(const Vec3d &size)
 
 void ModelVolume::assign_new_unique_ids_recursive()
 {
+    set_new_unique_id();
+}
+
+void ModelVolume::set_new_unique_id()
+{
+    const size_t previous_id = id().id;
     ObjectBase::set_new_unique_id();
     config.set_new_unique_id();
     supported_facets.set_new_unique_id();
     seam_facets.set_new_unique_id();
     mm_segmentation_facets.set_new_unique_id();
     fuzzy_skin_facets.set_new_unique_id();
+    if (object)
+        for (ModelInstance *instance : object->instances) {
+            auto entry = instance->view_transparency.bodies.extract(previous_id);
+            if (!entry.empty()) {
+                if (entry.mapped().detailed() && mesh_ptr())
+                    entry.mapped().discard_stale_details(ViewTransparency::mesh_signature(mesh().its));
+                entry.key() = id().id;
+                instance->view_transparency.bodies.insert(std::move(entry));
+            }
+        }
 }
 
 void ModelVolume::rotate(double angle, Axis axis)

@@ -30,6 +30,21 @@ add_subdirectory(fff_print)
 add_subdirectory(sla_print)
 add_subdirectory(cpp17 EXCLUDE_FROM_ALL)    # does not have to be built all the time
 
+add_executable(mesh_edge_finish_tests libslic3r/test_mesh_edge_finish.cpp)
+target_link_libraries(mesh_edge_finish_tests PRIVATE libslic3r)
+target_compile_definitions(mesh_edge_finish_tests PRIVATE EDGE_FINISH_TEST_PRINT_CONFIG)
+if (WIN32)
+    prusaslicer_copy_dlls(mesh_edge_finish_tests)
+endif ()
+add_test(NAME mesh_edge_finish_tests COMMAND mesh_edge_finish_tests)
+
+add_executable(view_transparency_tests libslic3r/test_view_transparency.cpp)
+target_link_libraries(view_transparency_tests PRIVATE libslic3r)
+if (WIN32)
+    prusaslicer_copy_dlls(view_transparency_tests)
+endif ()
+add_test(NAME view_transparency_tests COMMAND view_transparency_tests)
+
 if (SLIC3R_GUI)
     add_subdirectory(slic3rutils)
 endif()

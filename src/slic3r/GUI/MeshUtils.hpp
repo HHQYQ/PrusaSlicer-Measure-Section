@@ -225,7 +225,9 @@ public:
         Vec3f& normal, // normal of the triangle that was hit
         const ClippingPlane* clipping_plane = nullptr, // clipping plane (if active)
         size_t* facet_idx = nullptr, // index of the facet hit
-        const ClippingPlane* compound_plane = nullptr // remove only points clipped by both planes
+        const ClippingPlane* compound_plane = nullptr, // remove only points clipped by both planes
+        const std::function<bool(size_t)> &accept_facet = {},
+        bool front_faces_only = false
     ) const;
 
     // Given a point in world coords, the method returns closest point on the mesh.

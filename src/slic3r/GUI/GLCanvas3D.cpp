@@ -53,6 +53,8 @@
 
 #include "slic3r/GUI/BitmapCache.hpp"
 #include "slic3r/GUI/Gizmos/GLGizmoPainterBase.hpp"
+#include "slic3r/GUI/Gizmos/GLGizmoEdgeFinish.hpp"
+#include "slic3r/GUI/Gizmos/GLGizmoTransparency.hpp"
 #include "slic3r/Utils/UndoRedo.hpp"
 
 #if ENABLE_RETINA_GL
@@ -3839,6 +3841,9 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
     }
 
     bool any_gizmo_active = m_gizmos.get_current() != nullptr;
+    const auto *transparency = dynamic_cast<const GLGizmoTransparency*>(m_gizmos.get_current());
+    const bool mesh_feature_picking = m_gizmos.get_current_type() == GLGizmosManager::EdgeFinish ||
+        (transparency && transparency->picking_faces());
 
     int selected_object_idx = m_selection.get_object_idx();
     int layer_editing_object_idx = is_layers_editing_enabled() ? selected_object_idx : -1;
@@ -3917,7 +3922,7 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
         }
         else {
             const bool rectangle_selection_dragging = m_rectangle_selection.is_dragging();
-            if (evt.LeftDown() && (evt.ShiftDown() || evt.AltDown()) && m_picking_enabled) {
+            if (!mesh_feature_picking && evt.LeftDown() && (evt.ShiftDown() || evt.AltDown()) && m_picking_enabled) {
                 if (m_gizmos.get_current_type() != GLGizmosManager::SlaSupports &&
                     m_gizmos.get_current_type() != GLGizmosManager::FdmSupports &&
                     m_gizmos.get_current_type() != GLGizmosManager::Seam &&
@@ -3934,7 +3939,7 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
             // Don't deselect a volume if layer editing is enabled or any gizmo is active. We want the object to stay selected
             // during the scene manipulation.
 
-            if (m_picking_enabled && (!any_gizmo_active || !evt.CmdDown()) && (!m_hover_volume_idxs.empty() || !is_layers_editing_enabled()) && !rectangle_selection_dragging) {
+            if (!mesh_feature_picking && m_picking_enabled && (!any_gizmo_active || !evt.CmdDown()) && (!m_hover_volume_idxs.empty() || !is_layers_editing_enabled()) && !rectangle_selection_dragging) {
                 if (evt.LeftDown() && !m_hover_volume_idxs.empty()) {
                     int volume_idx = get_first_hover_volume_idx();
                     bool already_selected = m_selection.contains_volume(volume_idx);
@@ -3969,7 +3974,9 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
                 }
             }
 
-            if (!m_hover_volume_idxs.empty() && !m_rectangle_selection.is_dragging()) {
+            if (mesh_feature_picking && evt.LeftDown())
+                m_mouse.drag.start_position_3D = Vec3d(pos.x(), pos.y(), 0.);
+            if (!mesh_feature_picking && !m_hover_volume_idxs.empty() && !m_rectangle_selection.is_dragging()) {
                 if (evt.LeftDown() && m_moving_enabled && m_mouse.drag.move_volume_idx == -1) {
                     // Only accept the initial position, if it is inside the volume bounding box.
                     const int volume_idx = get_first_hover_volume_idx();
@@ -4148,12 +4155,12 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
 
             m_rectangle_selection.stop_dragging();
         }
-        else if (evt.LeftUp() && !m_mouse.ignore_left_up && !m_mouse.dragging && m_hover_volume_idxs.empty() && !is_layers_editing_enabled()) {
+        else if (!mesh_feature_picking && evt.LeftUp() && !m_mouse.ignore_left_up && !m_mouse.dragging && m_hover_volume_idxs.empty() && !is_layers_editing_enabled()) {
             // deselect and propagate event through callback
             if (!evt.ShiftDown() && (!any_gizmo_active || !evt.CmdDown()) && m_picking_enabled)
                 deselect_all();
         }
-        else if (evt.RightUp()) {
+        else if (!mesh_feature_picking && evt.RightUp()) {
             // forces a frame render to ensure that m_hover_volume_idxs is updated even when the user right clicks while
             // the context menu is already shown
             render();
@@ -6472,6 +6479,9 @@ void GLCanvas3D::_render_objects(GLVolumeCollection::ERenderType type)
     GLShaderProgram* shader = wxGetApp().get_shader("gouraud");
     if (shader != nullptr) {
         shader->start_using();
+        const auto *edge_preview = dynamic_cast<const GLGizmoEdgeFinish*>(m_gizmos.get_current());
+        const bool view_transparency = wxGetApp().plater()->canvas3D() == this && current_printer_technology() == ptFFF &&
+            !m_layers_editing.is_enabled() && !dynamic_cast<const GLGizmoPainterBase*>(m_gizmos.get_current());
 
         switch (type)
         {
@@ -6491,9 +6501,10 @@ void GLCanvas3D::_render_objects(GLVolumeCollection::ERenderType type)
             else {
                 // do not cull backfaces to show broken geometry, if any
                 const Camera& camera = wxGetApp().plater()->get_camera();
-                m_volumes.render(type, m_picking_enabled, trafo, camera.get_projection_matrix(), [this](const GLVolume& volume) {
-                    return (m_render_sla_auxiliaries || volume.composite_id.volume_id >= 0);
-                    });
+                m_volumes.render(type, m_picking_enabled, trafo, camera.get_projection_matrix(), [this, edge_preview](const GLVolume& volume) {
+                    return (m_render_sla_auxiliaries || volume.composite_id.volume_id >= 0) &&
+                        (!edge_preview || !edge_preview->replaces_volume(volume));
+                    }, view_transparency);
             }
 
             // In case a painting gizmo is open, it should render the painted triangles
@@ -6513,7 +6524,9 @@ void GLCanvas3D::_render_objects(GLVolumeCollection::ERenderType type)
         case GLVolumeCollection::ERenderType::Transparent:
         {
             const Camera& camera = wxGetApp().plater()->get_camera();
-            m_volumes.render(type, false, trafo, camera.get_projection_matrix());
+            m_volumes.render(type, false, trafo, camera.get_projection_matrix(), [edge_preview](const GLVolume& volume) {
+                return !edge_preview || !edge_preview->replaces_volume(volume);
+            }, view_transparency);
             break;
         }
         }

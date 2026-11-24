@@ -76,7 +76,8 @@ static inline void throw_on_missing_variable(const std::string &opt_key, const c
 // Used to provide hints to the user on default extrusion width values, and to provide reasonable values to the PlaceholderParser.
 double Flow::extrusion_width(const std::string& opt_key, const ConfigOptionFloatOrPercent* opt, const ConfigOptionResolver& config, const unsigned int first_printing_extruder)
 {
-	assert(opt != nullptr);
+	if (opt == nullptr)
+		throw_on_missing_variable(opt_key, opt_key.c_str());
 
 	bool first_layer = boost::starts_with(opt_key, "first_layer_");
 
@@ -111,7 +112,7 @@ double Flow::extrusion_width(const std::string& opt_key, const ConfigOptionFloat
 	if (opt->value == 0.) {
         // If user left option to 0, calculate a sane default width.
     	auto opt_nozzle_diameters = config.option<ConfigOptionFloats>("nozzle_diameter");
-    	if (opt_nozzle_diameters == nullptr)
+		if (opt_nozzle_diameters == nullptr || opt_nozzle_diameters->values.empty())
     		throw_on_missing_variable(opt_key, "nozzle_diameter");
         return auto_extrusion_width(opt_key_to_flow_role(opt_key), float(opt_nozzle_diameters->get_at(first_printing_extruder)));
     }

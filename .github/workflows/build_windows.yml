@@ -52,7 +52,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: payload
-          key: prusa-297-win2022-v143-x64-app-v1-${{ hashFiles('src/**', 'resources/**', 'deps/**', 'bundled_deps/**', 'cmake/**', 'CMakeLists.txt', 'version.inc', 'build-utils/project-branding.iss') }}
+          key: prusa-297-win2022-v143-x64-app-v1-${{ hashFiles('src/**', 'resources/**', 'deps/**', 'bundled_deps/**', 'cmake/**', 'CMakeLists.txt', 'version.inc', 'build-utils/project-branding.iss', 'tests/CMakeLists.txt', 'tests/libslic3r/test_mesh_edge_finish.cpp', 'tests/libslic3r/test_view_transparency.cpp') }}
 
       - name: Restore compiled dependencies
         if: ${{ steps.app-cache.outputs.cache-hit != 'true' }}
@@ -86,9 +86,11 @@ jobs:
         run: |
           for /f "usebackq delims=" %%I in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do call "%%I\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
           if errorlevel 1 exit /b 1
-          cmake -S . -B build-win -G "Visual Studio 17 2022" -A x64 -DCMAKE_CONFIGURATION_TYPES=Release "-DCMAKE_PREFIX_PATH=%CD%\deps-build\destdir\usr\local" "-DCMAKE_INSTALL_PREFIX=%CD%\payload" -DSLIC3R_BUILD_TESTS=OFF
+          cmake -S . -B build-win -G "Visual Studio 17 2022" -A x64 -DCMAKE_CONFIGURATION_TYPES=Release "-DCMAKE_PREFIX_PATH=%CD%\deps-build\destdir\usr\local" "-DCMAKE_INSTALL_PREFIX=%CD%\payload" -DSLIC3R_BUILD_TESTS=ON
           if errorlevel 1 exit /b 1
-          cmake --build build-win --config Release --parallel 2
+          cmake --build build-win --config Release --parallel 2 --target PrusaSlicer_app_gui PrusaSlicer_app_console PrusaSlicer_app_gcodeviewer OCCTWrapper PrusaSlicerDllsCopy mesh_edge_finish_tests view_transparency_tests
+          if errorlevel 1 exit /b 1
+          ctest --test-dir build-win -C Release -R "^(mesh_edge_finish|view_transparency)_tests$" --output-on-failure --no-tests=error
           if errorlevel 1 exit /b 1
 
       - name: Compile translations and stage application files
@@ -170,6 +172,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          if ($env:PROJECT_VERSION -eq '2.9.7.11') {
+            $previousDir = Join-Path $env:RUNNER_TEMP 'PrusaThreePointPrevious'
+            $asset = 'PrusaSlicer-2.9.7.10-Three-Point-Circle-x64-Setup.exe'
+            gh release download v2.9.7.10-three-point-circle --repo $env:GITHUB_REPOSITORY --pattern $asset --dir $previousDir
+            if ($LASTEXITCODE -ne 0) { throw 'The 2.9.7.10 upgrade baseline is required.' }
+            $previous = Join-Path $previousDir $asset
+            if ((Get-FileHash -LiteralPath $previous -Algorithm SHA256).Hash -ne '60fd1c5fb26ef2ebe7413bbbaeb48ad4def879794dada8da9f806e47a17eb055') {
+              throw 'The 2.9.7.10 installer does not match the recorded checksum.'
+            }
+            "setup=$previous" >> $env:GITHUB_OUTPUT
+            return
+          }
           $runId = gh run list --workflow build_windows.yml --branch $env:GITHUB_REF_NAME `
             --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty'
           if ($LASTEXITCODE -ne 0 -or !$runId) { return }

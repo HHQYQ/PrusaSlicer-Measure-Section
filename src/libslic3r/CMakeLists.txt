@@ -272,6 +272,8 @@ set(SLIC3R_SOURCES
     CutUtils.hpp
     Model.cpp
     Model.hpp
+    ViewTransparency.cpp
+    ViewTransparency.hpp
     ModelProcessing.cpp
     ModelProcessing.hpp
     FileReader.cpp
@@ -584,6 +586,7 @@ add_library(libslic3r_cgal STATIC
     Geometry/VoronoiUtilsCgal.hpp Geometry/VoronoiUtilsCgal.cpp
     IntersectionPoints.hpp IntersectionPoints.cpp
     MeshBoolean.hpp MeshBoolean.cpp
+    MeshEdgeFinish.hpp MeshEdgeFinish.cpp MeshEdgeFinishBoolean.cpp
     TryCatchSignal.hpp TryCatchSignal.cpp
     Triangulation.hpp Triangulation.cpp
     SLA/SupportIslands/VoronoiDiagramCGAL.hpp SLA/SupportIslands/VoronoiDiagramCGAL.cpp

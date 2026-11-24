@@ -25,6 +25,7 @@
 #include "TextConfiguration.hpp"
 #include "EmbossShape.hpp"
 #include "TriangleSelector.hpp"
+#include "ViewTransparency.hpp"
 #include "Feature/FullSpectrum/VirtualExtruder.hpp"
 
 #include <map>
@@ -812,6 +813,11 @@ public:
     void                set_mesh(indexed_triangle_set &&mesh) { m_mesh = std::make_shared<const TriangleMesh>(std::move(mesh)); }
     void                set_mesh(std::shared_ptr<const TriangleMesh> &mesh) { m_mesh = mesh; }
     void                set_mesh(std::unique_ptr<const TriangleMesh> &&mesh) { m_mesh = std::move(mesh); }
+    void                set_mesh_and_convex_hull(std::shared_ptr<const TriangleMesh> mesh, std::shared_ptr<const TriangleMesh> hull)
+    {
+        m_mesh = std::move(mesh);
+        m_convex_hull = std::move(hull);
+    }
 	void				reset_mesh() { m_mesh = std::make_shared<const TriangleMesh>(); }
     const std::shared_ptr<const TriangleMesh>& get_mesh_shared_ptr() const { return m_mesh; }
     // Configuration parameters specific to an object model geometry or a modifier volume, 
@@ -921,14 +927,7 @@ public:
     const Transform3d& get_matrix() const { return m_transformation.get_matrix(); }
     Transform3d get_matrix_no_offset() const { return m_transformation.get_matrix_no_offset(); }
 
-	void set_new_unique_id() { 
-        ObjectBase::set_new_unique_id();
-        this->config.set_new_unique_id();
-        this->supported_facets.set_new_unique_id();
-        this->seam_facets.set_new_unique_id();
-        this->mm_segmentation_facets.set_new_unique_id();
-        this->fuzzy_skin_facets.set_new_unique_id();
-    }
+    void set_new_unique_id();
 
     bool is_fdm_support_painted() const { return !this->supported_facets.empty(); }
     bool is_seam_painted() const { return !this->seam_facets.empty(); }
@@ -1147,6 +1146,8 @@ public:
     // Whether or not this instance is printable
     bool printable { true };
 
+    ViewTransparency::Instance view_transparency;
+
     ModelObject* get_object() const { return this->object; }
 
     const Geometry::Transformation& get_transformation() const { return m_transformation; }
@@ -1210,7 +1211,8 @@ private:
     explicit ModelInstance(ModelObject* object) : print_volume_state(ModelInstancePVS_Inside), object(object) { assert(this->id().valid()); }
     // Constructor, which assigns a new unique ID.
     explicit ModelInstance(ModelObject *object, const ModelInstance &other) :
-        m_transformation(other.m_transformation), print_volume_state(ModelInstancePVS_Inside), printable(other.printable), object(object) { assert(this->id().valid() && this->id() != other.id()); }
+        m_transformation(other.m_transformation), print_volume_state(ModelInstancePVS_Inside), printable(other.printable),
+        view_transparency(other.view_transparency), object(object) { assert(this->id().valid() && this->id() != other.id()); }
 
     explicit ModelInstance(ModelInstance &&rhs) = delete;
     ModelInstance& operator=(const ModelInstance &rhs) = delete;
@@ -1221,7 +1223,7 @@ private:
 	// Used for deserialization, therefore no IDs are allocated.
 	ModelInstance() : ObjectBase(-1), object(nullptr) { assert(this->id().invalid()); }
 	template<class Archive> void serialize(Archive &ar) {
-        ar(m_transformation, print_volume_state, printable);
+        ar(m_transformation, print_volume_state, printable, view_transparency);
     }
 };
 

@@ -624,7 +624,7 @@ std::vector<unsigned> MeshRaycaster::get_unobscured_idxs(const Geometry::Transfo
 
 bool MeshRaycaster::closest_hit(const Vec2d& mouse_pos, const Transform3d& trafo, const Camera& camera,
     Vec3f& position, Vec3f& normal, const ClippingPlane* clipping_plane, size_t* facet_idx,
-    const ClippingPlane* compound_plane) const
+    const ClippingPlane* compound_plane, const std::function<bool(size_t)> &accept_facet, bool front_faces_only) const
 {
     Vec3d point;
     Vec3d direction;
@@ -636,14 +636,17 @@ bool MeshRaycaster::closest_hit(const Vec2d& mouse_pos, const Transform3d& trafo
         return false; // no intersection found
 
     size_t hit_id = 0;
-    if (clipping_plane != nullptr) {
-        while (hit_id < hits.size()) {
-            const Vec3d world_hit = trafo * hits[hit_id].position();
+    while (hit_id < hits.size()) {
+        const auto &hit = hits[hit_id];
+        if ((!accept_facet || accept_facet(hit.face())) && (!front_faces_only || hit.normal().dot(direction) < 0.)) {
+            if (!clipping_plane)
+                break;
+            const Vec3d world_hit = trafo * hit.position();
             if (!clipping_plane->is_point_clipped(world_hit) ||
                 (compound_plane && !compound_plane->is_point_clipped(world_hit)))
                 break;
-            ++hit_id;
         }
+        ++hit_id;
     }
 
     if (hit_id == hits.size())

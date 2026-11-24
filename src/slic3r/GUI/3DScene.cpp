@@ -399,7 +399,7 @@ void GLVolume::set_range(double min_z, double max_z)
     }
 }
 
-void GLVolume::render()
+void GLVolume::render(GUI::GLModel *appearance)
 {
     if (!is_active)
         return;
@@ -414,7 +414,9 @@ void GLVolume::render()
         glsafe(::glFrontFace(GL_CW));
     glsafe(::glCullFace(GL_BACK));
 
-    if (tverts_range == std::make_pair<size_t, size_t>(0, -1))
+    if (appearance)
+        appearance->render();
+    else if (tverts_range == std::make_pair<size_t, size_t>(0, -1))
         model.render();
     else
         model.render(this->tverts_range);
@@ -747,10 +749,123 @@ GLVolumeWithIdAndZList volumes_to_render(const GLVolumePtrs& volumes, GLVolumeCo
     return list;
 }
 
-void GLVolumeCollection::render(GLVolumeCollection::ERenderType type, bool disable_cullface, const Transform3d& view_matrix, const Transform3d& projection_matrix,
-    std::function<bool(const GLVolume&)> filter_func) const
+namespace {
+struct TransparencyDraw {
+    GLVolume *first;
+    GUI::GLModel *group = nullptr;
+    int percent = -1;
+    double depth = 0.;
+};
+
+std::vector<GLVolume::TransparencyGroup> *transparency_groups(GLVolume &volume, const ModelVolume &source,
+    const ViewTransparency::Body &body, ViewTransparency::Percent whole)
 {
-    GLVolumeWithIdAndZList to_render = volumes_to_render(volumes, type, view_matrix, filter_func);
+    const auto mesh = source.mesh_ptr();
+    if (!volume.transparency_cache || volume.transparency_cache->mesh != mesh) {
+        volume.transparency_cache = std::make_unique<GLVolume::TransparencyCache>();
+        volume.transparency_cache->mesh = mesh;
+        volume.transparency_cache->signature = ViewTransparency::mesh_signature(mesh->its);
+    }
+    auto &cache = *volume.transparency_cache;
+    if (cache.signature != body.mesh_signature)
+        return nullptr;
+    if (cache.whole == whole && cache.body == body.percent && cache.shells == body.shells && cache.faces == body.faces)
+        return &cache.groups;
+
+    const auto effective = [&](size_t facet) { return body.effective(whole, facet, true); };
+    bool reusable = !cache.groups.empty();
+    for (auto &group : cache.groups) {
+        group.percent = effective(group.facets.front());
+        if (std::any_of(group.facets.begin(), group.facets.end(), [&](size_t i) { return effective(i) != group.percent; })) {
+            reusable = false;
+            break;
+        }
+    }
+    if (!reusable) {
+        cache.groups.clear();
+        const indexed_triangle_set &its = mesh->its;
+        std::array<std::vector<size_t>, 101> partitions;
+        for (size_t facet = 0; facet < its.indices.size(); ++facet)
+            partitions[effective(facet)].push_back(facet);
+        for (size_t percent = 0; percent < partitions.size(); ++percent) {
+            auto &facets = partitions[percent];
+            if (facets.empty())
+                continue;
+            GUI::GLModel::Geometry data;
+            data.format = {GUI::GLModel::Geometry::EPrimitiveType::Triangles, GUI::GLModel::Geometry::EVertexLayout::P3N3};
+            data.reserve_vertices(3 * facets.size());
+            data.reserve_indices(3 * facets.size());
+            unsigned int first = 0;
+            for (size_t facet : facets) {
+                const auto &f = its.indices[facet];
+                const Vec3f p = its.vertices[f[0]], q = its.vertices[f[1]], r = its.vertices[f[2]];
+                const Vec3f normal = (q - p).cross(r - p).normalized();
+                data.add_vertex(p, normal);
+                data.add_vertex(q, normal);
+                data.add_vertex(r, normal);
+                data.add_triangle(first, first + 1, first + 2);
+                first += 3;
+            }
+            auto &group = cache.groups.emplace_back();
+            group.percent = uint8_t(percent);
+            group.facets = std::move(facets);
+            group.model = std::make_unique<GUI::GLModel>();
+            group.model->init_from(std::move(data));
+        }
+    }
+    cache.whole = whole;
+    cache.body = body.percent;
+    cache.shells = body.shells;
+    cache.faces = body.faces;
+    return &cache.groups;
+}
+} // namespace
+
+void GLVolumeCollection::render(GLVolumeCollection::ERenderType type, bool disable_cullface, const Transform3d& view_matrix, const Transform3d& projection_matrix,
+    std::function<bool(const GLVolume&)> filter_func, bool use_view_transparency) const
+{
+    const ModelObjectPtrs& model_objects = GUI::wxGetApp().model().objects;
+    std::vector<TransparencyDraw> to_render;
+    for (const auto &item : volumes_to_render(volumes, use_view_transparency ? ERenderType::All : type, view_matrix, filter_func)) {
+        GLVolume &volume = *item.first;
+        const auto append = [&](GUI::GLModel *group, int percent) {
+            const bool transparent = percent < 0 ? volume.render_color.is_transparent() : percent > 0;
+            if (percent == 100 || (type != ERenderType::All && transparent != (type == ERenderType::Transparent)))
+                return;
+            const double depth = transparent && use_view_transparency ? (group ? group->get_bounding_box() : volume.bounding_box())
+                .transformed(view_matrix * volume.world_matrix()).max(2) : 0.;
+            to_render.push_back({&volume, group, percent, depth});
+        };
+        if (!use_view_transparency || !volume.is_active || volume.object_idx() < 0 || volume.volume_idx() < 0 ||
+            volume.instance_idx() < 0 || size_t(volume.object_idx()) >= model_objects.size()) {
+            append(nullptr, -1);
+            continue;
+        }
+        const ModelObject &object = *model_objects[volume.object_idx()];
+        if (size_t(volume.volume_idx()) >= object.volumes.size() || size_t(volume.instance_idx()) >= object.instances.size() ||
+            !object.volumes[volume.volume_idx()]->is_model_part()) {
+            append(nullptr, -1);
+            continue;
+        }
+        const auto &source = *object.volumes[volume.volume_idx()];
+        const auto &view = object.instances[volume.instance_idx()]->view_transparency;
+        const auto body = view.bodies.find(source.id().id);
+        if (body != view.bodies.end() && body->second.detailed())
+            if (const auto *groups = transparency_groups(volume, source, body->second, view.percent)) {
+                for (const auto &group : *groups)
+                    append(group.model.get(), group.percent);
+                continue;
+            }
+        if (body == view.bodies.end() || !body->second.detailed())
+            volume.transparency_cache.reset();
+        const int percent = body == view.bodies.end() ? view.percent : body->second.effective(view.percent, 0, false);
+        const bool explicit_style = view.percent != 0 || (body != view.bodies.end() && body->second.percent <= 100);
+        append(nullptr, explicit_style ? percent : -1);
+    }
+    if (use_view_transparency && type == ERenderType::Transparent)
+        std::stable_sort(to_render.begin(), to_render.end(), [](const auto &a, const auto &b) { return a.depth < b.depth; });
+    if (use_view_transparency && type == ERenderType::Opaque)
+        std::stable_sort(to_render.begin(), to_render.end(), [](const auto &a, const auto &b) { return a.first->selected && !b.first->selected; });
     if (to_render.empty())
         return;
 
@@ -784,7 +899,6 @@ void GLVolumeCollection::render(GLVolumeCollection::ERenderType type, bool disab
     // each ModelVolume. The cache is invalidated based on changes in extruder_colors,
     // default extruder idx and timestamp of the painted data. The data belonging to objects
     // // which no longer exist are removed from the cache periodically.
-    const ModelObjectPtrs& model_objects = GUI::wxGetApp().model().objects;
     const std::vector<ColorRGBA> extruders_colors = GUI::wxGetApp().plater()->get_extruder_colors_from_plater_config();
     const bool is_render_as_mmu_painted_enabled = !model_objects.empty() && !extruders_colors.empty();
 
@@ -797,7 +911,7 @@ void GLVolumeCollection::render(GLVolumeCollection::ERenderType type, bool disab
 
 
 
-    for (GLVolumeWithIdAndZ& volume : to_render) {
+    for (const TransparencyDraw &volume : to_render) {
         if (!volume.first->is_active)
             continue;
 
@@ -809,11 +923,11 @@ void GLVolumeCollection::render(GLVolumeCollection::ERenderType type, bool disab
         const bool render_as_mmu_painted = is_render_as_mmu_painted_enabled && !volume.first->selected &&
             !volume.first->is_outside && volume.first->hover == GLVolume::HS_None && !volume.first->is_wipe_tower() && obj_idx >= 0 && vol_idx >= 0 &&
             !model_objects[obj_idx]->volumes[vol_idx]->mm_segmentation_facets.empty() &&
-            type != GLVolumeCollection::ERenderType::Transparent; // to filter out shells (not very nice)
+            type != GLVolumeCollection::ERenderType::Transparent && !volume.group;
         volume.first->set_render_color(true);
 
         // render sinking contours of non-hovered volumes
-        if (sink_shader != nullptr) {
+        if (sink_shader != nullptr && !volume.group) {
             sink_shader->start_using();
             if (m_show_sinking_contours) {
                 if (volume.first->is_sinking() && !volume.first->is_below_printbed() &&
@@ -905,11 +1019,14 @@ void GLVolumeCollection::render(GLVolumeCollection::ERenderType type, bool disab
 #endif // ENABLE_ENVIRONMENT_MAP
             glcheck();
 
-            volume.first->model.set_color(volume.first->render_color);
+            ColorRGBA color = volume.first->render_color;
+            if (volume.percent >= 0)
+                color.a(1.f - 0.01f * volume.percent);
+            (volume.group ? *volume.group : volume.first->model).set_color(color);
             shader->set_uniform("view_model_matrix", view_matrix * world_matrix);
             shader->set_uniform("projection_matrix", projection_matrix);
             shader->set_uniform("view_normal_matrix", view_normal_matrix);
-            volume.first->render();
+            volume.first->render(volume.group);
 
 #if ENABLE_ENVIRONMENT_MAP
             if (use_environment_texture)
@@ -940,9 +1057,9 @@ void GLVolumeCollection::render(GLVolumeCollection::ERenderType type, bool disab
     if (m_show_sinking_contours) {
         if (sink_shader != nullptr) {
             sink_shader->start_using();
-            for (GLVolumeWithIdAndZ& volume : to_render) {
+            for (const TransparencyDraw &volume : to_render) {
                 // render sinking contours of hovered/displaced volumes
-                if (volume.first->is_sinking() && !volume.first->is_below_printbed() &&
+                if (!volume.group && volume.first->is_sinking() && !volume.first->is_below_printbed() &&
                     (volume.first->hover != GLVolume::HS_None || volume.first->force_sinking_contours)) {
                     glsafe(::glDepthFunc(GL_ALWAYS));
                     volume.first->render_sinking_contours();
@@ -956,8 +1073,9 @@ void GLVolumeCollection::render(GLVolumeCollection::ERenderType type, bool disab
     if (edges_shader != nullptr) {
         edges_shader->start_using();
         if (m_show_non_manifold_edges && GUI::wxGetApp().app_config->get_bool("non_manifold_edges")) {
-            for (GLVolumeWithIdAndZ& volume : to_render) {
-                volume.first->render_non_manifold_edges();
+            for (const TransparencyDraw &volume : to_render) {
+                if (!volume.group)
+                    volume.first->render_non_manifold_edges();
             }
         }
         edges_shader->stop_using();

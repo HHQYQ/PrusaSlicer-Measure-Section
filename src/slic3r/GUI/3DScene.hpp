@@ -203,6 +203,19 @@ public:
     EHoverState         	hover;
 
     GUI::GLModel            model;
+    struct TransparencyGroup {
+        uint8_t percent = 0;
+        std::vector<size_t> facets;
+        std::unique_ptr<GUI::GLModel> model;
+    };
+    struct TransparencyCache {
+        std::shared_ptr<const TriangleMesh> mesh;
+        uint64_t signature = 0;
+        int whole = -1, body = -1;
+        std::vector<uint8_t> shells, faces;
+        std::vector<TransparencyGroup> groups;
+    };
+    std::unique_ptr<TransparencyCache> transparency_cache;
     // raycaster used for picking
     std::unique_ptr<GUI::MeshRaycaster> mesh_raycaster;
     // Ranges of triangle and quad indices to be rendered.
@@ -319,7 +332,7 @@ public:
 
     void                set_range(double low, double high);
 
-    void                render();
+    void                render(GUI::GLModel *appearance = nullptr);
 
     void                set_bounding_boxes_as_dirty() {
         m_transformed_bounding_box.reset();
@@ -453,7 +466,7 @@ public:
     GLVolume* new_nontoolpath_volume(const ColorRGBA& rgba);
     // Render the volumes by OpenGL.
     void render(ERenderType type, bool disable_cullface, const Transform3d& view_matrix, const Transform3d& projection_matrix,
-        std::function<bool(const GLVolume&)> filter_func = std::function<bool(const GLVolume&)>()) const;
+        std::function<bool(const GLVolume&)> filter_func = nullptr, bool use_view_transparency = false) const;
 
     // Clear the geometry
     void clear() { for (auto *v : volumes) delete v; volumes.clear(); }

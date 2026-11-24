@@ -23,6 +23,8 @@
 #include "slic3r/GUI/Gizmos/GLGizmoFdmSupports.hpp"
 #include "slic3r/GUI/Gizmos/GLGizmoFuzzySkin.hpp"
 #include "slic3r/GUI/Gizmos/GLGizmoCut.hpp"
+#include "slic3r/GUI/Gizmos/GLGizmoEdgeFinish.hpp"
+#include "slic3r/GUI/Gizmos/GLGizmoTransparency.hpp"
 #include "slic3r/GUI/Gizmos/GLGizmoHollow.hpp"
 #include "slic3r/GUI/Gizmos/GLGizmoSeam.hpp"
 #include "slic3r/GUI/Gizmos/GLGizmoMmuSegmentation.hpp"
@@ -82,7 +84,13 @@ std::vector<size_t> GLGizmosManager::get_selectable_idxs() const
     if (section != out.end()) {
         out.erase(section);
         const auto measure = std::find(out.begin(), out.end(), size_t(Measure));
-        out.insert(measure == out.end() ? out.end() : measure + 1, size_t(Section));
+        const auto after_section = out.insert(measure == out.end() ? out.end() : measure + 1, size_t(Section));
+        const auto edge_finish = std::find(after_section, out.end(), size_t(EdgeFinish));
+        if (edge_finish != out.end()) {
+            const size_t section_idx = after_section - out.begin();
+            out.erase(edge_finish);
+            out.insert(out.begin() + section_idx + 1, size_t(EdgeFinish));
+        }
     }
     return out;
 }
@@ -145,6 +153,8 @@ bool GLGizmosManager::init()
     m_gizmos.emplace_back(new GLGizmoSVG(m_parent));
     m_gizmos.emplace_back(new GLGizmoSimplify(m_parent));
     m_gizmos.emplace_back(new GLSectionViewButton(m_parent));
+    m_gizmos.emplace_back(new GLGizmoEdgeFinish(m_parent));
+    m_gizmos.emplace_back(new GLGizmoTransparency(m_parent));
 
     m_common_gizmos_data.reset(new CommonGizmosDataPool(&m_parent));
 
@@ -557,7 +567,8 @@ bool GLGizmosManager::on_char(wxKeyEvent& evt)
         case WXK_ESCAPE:
         {
             if (m_current != Undefined) {
-                if (m_current == Measure && gizmo_event(SLAGizmoEventType::Escape)) {
+                if ((m_current == Measure && gizmo_event(SLAGizmoEventType::Escape)) ||
+                    (m_current == EdgeFinish && static_cast<GLGizmoEdgeFinish*>(get_current())->escape())) {
                     // do nothing
                 }
                 else if (m_current != SlaSupports || !gizmo_event(SLAGizmoEventType::DiscardChanges))

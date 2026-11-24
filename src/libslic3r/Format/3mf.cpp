@@ -21,6 +21,7 @@
 #include <limits>
 #include <stdexcept>
 #include <optional>
+#include <sstream>
 #include <string_view>
 
 #include <boost/assign.hpp>
@@ -91,6 +92,112 @@ const std::string RELATIONSHIPS_FILE = "_rels/.rels";
 const std::string THUMBNAIL_FILE = "Metadata/thumbnail.png";
 const std::string PRINT_CONFIG_FILE = "Metadata/Slic3r_PE.config";
 const std::string MODEL_CONFIG_FILE = "Metadata/Slic3r_PE_model.config";
+static constexpr const char *VIEW_TRANSPARENCY_ATTR = "slic3rpe:view_transparency";
+
+namespace Slic3r {
+namespace {
+static void write_transparency_runs(std::ostream &out, const std::vector<ViewTransparency::Percent> &facets)
+{
+    struct Run { size_t first, length; int percent; };
+    std::vector<Run> runs;
+    for (size_t i = 0; i < facets.size();) {
+        size_t end = i + 1;
+        while (end < facets.size() && facets[end] == facets[i])
+            ++end;
+        if (facets[i] <= 100)
+            runs.push_back({i, end - i, facets[i]});
+        i = end;
+    }
+    out << ' ' << runs.size();
+    for (const auto &r : runs)
+        out << ' ' << r.first << ' ' << r.length << ' ' << r.percent;
+}
+
+static std::string encode_view_transparency(const ModelInstance &instance)
+{
+    const auto &view = instance.view_transparency;
+    if (view.percent == 0 && view.bodies.empty())
+        return {};
+    std::ostringstream data;
+    size_t count = 0;
+    const auto &volumes = instance.get_object()->volumes;
+    for (size_t i = 0; i < volumes.size(); ++i) {
+        const ModelVolume &volume = *volumes[i];
+        auto it = view.bodies.find(volume.id().id);
+        if (!volume.is_model_part() || it == view.bodies.end())
+            continue;
+        const auto &body = it->second;
+        const auto &mesh = volume.mesh().its;
+        const bool detailed = body.detailed() && body.mesh_signature == ViewTransparency::mesh_signature(mesh);
+        if (!detailed && body.percent == ViewTransparency::Inherit)
+            continue;
+        ++count;
+        data << ' ' << i << ' ' << int(body.percent) << ' ' << (detailed ? ViewTransparency::topology_signature(mesh) : 0);
+        if (detailed) {
+            write_transparency_runs(data, body.shells);
+            write_transparency_runs(data, body.faces);
+        } else {
+            data << " 0 0";
+        }
+    }
+    return view.percent || count ? "1 " + std::to_string(view.percent) + ' ' + std::to_string(count) + data.str() : std::string{};
+}
+
+static bool read_transparency_runs(std::istream &in, size_t facet_count, bool keep, std::vector<ViewTransparency::Percent> &facets)
+{
+    size_t count;
+    if (!(in >> count) || count > facet_count)
+        return false;
+    if (keep && count)
+        facets.assign(facet_count, ViewTransparency::Inherit);
+    size_t previous_end = 0;
+    for (size_t i = 0; i < count; ++i) {
+        size_t first, length;
+        int value;
+        if (!(in >> first >> length >> value) || first < previous_end || first >= facet_count ||
+            length == 0 || length > facet_count - first || value < 0 || value > 100)
+            return false;
+        previous_end = first + length;
+        if (keep)
+            std::fill(facets.begin() + first, facets.begin() + previous_end, ViewTransparency::Percent(value));
+    }
+    return true;
+}
+
+static void decode_view_transparency(ModelInstance &instance, const std::string &encoded)
+{
+    std::istringstream in(encoded);
+    int version, percent;
+    size_t count;
+    const auto &volumes = instance.get_object()->volumes;
+    if (!(in >> version >> percent >> count) || version != 1 || percent < 0 || percent > 100 || count > volumes.size())
+        return;
+    ViewTransparency::Instance view;
+    view.percent = ViewTransparency::Percent(percent);
+    for (size_t entry = 0; entry < count; ++entry) {
+        size_t index;
+        int value;
+        uint64_t topology;
+        if (!(in >> index >> value >> topology) || index >= volumes.size() ||
+            (value != ViewTransparency::Inherit && (value < 0 || value > 100)))
+            return;
+        const ModelVolume &volume = *volumes[index];
+        const auto &mesh = volume.mesh().its;
+        ViewTransparency::Body body;
+        body.percent = ViewTransparency::Percent(value);
+        const bool detailed = topology && volume.is_model_part() && topology == ViewTransparency::topology_signature(mesh);
+        if (!read_transparency_runs(in, mesh.indices.size(), detailed, body.shells) ||
+            !read_transparency_runs(in, mesh.indices.size(), detailed, body.faces))
+            return;
+        if (detailed)
+            body.mesh_signature = ViewTransparency::mesh_signature(mesh);
+        if (volume.is_model_part() && !body.empty())
+            view.bodies.emplace(volume.id().id, std::move(body));
+    }
+    instance.view_transparency = std::move(view);
+}
+} // namespace
+} // namespace Slic3r
 const std::string FULL_SPECTRUM_CONFIG_FILE = "Metadata/Prusa_Slicer_full_spectrum.json";
 const std::string LAYER_HEIGHTS_PROFILE_FILE = "Metadata/Slic3r_PE_layer_heights_profile.txt";
 const std::string LAYER_CONFIG_RANGES_FILE = "Metadata/Prusa_Slicer_layer_config_ranges.xml";
@@ -521,6 +628,7 @@ namespace Slic3r {
         IdToModelObjectMap m_objects;
         IdToAliasesMap m_objects_aliases;
         InstancesList m_instances;
+        std::map<const ModelInstance*, std::string> m_view_transparency;
         IdToGeometryMap m_geometries;
         CurrentConfig m_curr_config;
         IdToMetadataMap m_objects_metadata;
@@ -696,6 +804,7 @@ namespace Slic3r {
         m_objects.clear();
         m_objects_aliases.clear();
         m_instances.clear();
+        m_view_transparency.clear();
         m_geometries.clear();
         m_curr_config.object_id = -1;
         m_curr_config.volume_id = -1;
@@ -1041,6 +1150,9 @@ namespace Slic3r {
 
         for (int obj_id = 0; obj_id < int(model.objects.size()); ++obj_id) {
             ModelObject* o = model.objects[obj_id];
+            for (ModelInstance *instance : o->instances)
+                if (auto it = m_view_transparency.find(instance); it != m_view_transparency.end())
+                    decode_view_transparency(*instance, it->second);
             for (int vol_id = 0; vol_id < int(o->volumes.size()); ++vol_id) {
                 ModelVolume* v = o->volumes[vol_id];
                 if (v->source.input_file.empty())
@@ -2236,7 +2348,15 @@ namespace Slic3r {
         if (path.empty()) path = m_model_path;
         int printable = get_attribute_value_bool(attributes, num_attributes, PRINTABLE_ATTR);
 
-        return _create_object_instance({path, object_id}, transform, printable, 1);
+        const size_t previous_size = m_instances.size();
+        if (!_create_object_instance({path, object_id}, transform, printable, 1))
+            return false;
+        if (m_instances.size() == previous_size + 1) {
+            std::string view = get_attribute_value_string(attributes, num_attributes, VIEW_TRANSPARENCY_ATTR);
+            if (!view.empty())
+                m_view_transparency.emplace(m_instances.back().instance, std::move(view));
+        }
+        return true;
     }
 
     bool _3MF_Importer::_handle_end_item()
@@ -2767,11 +2887,13 @@ namespace Slic3r {
             unsigned int id;
             Transform3d transform;
             bool printable;
+            std::string view_transparency;
 
-            BuildItem(unsigned int id, const Transform3d& transform, const bool printable)
+            BuildItem(unsigned int id, const Transform3d& transform, const ModelInstance &instance)
                 : id(id)
                 , transform(transform)
-                , printable(printable)
+                , printable(instance.printable)
+                , view_transparency(encode_view_transparency(instance))
             {
             }
         };
@@ -3197,7 +3319,7 @@ namespace Slic3r {
             Transform3d t = instance->get_matrix();
             // instance_id is just a 1 indexed index in build_items.
             assert(instance_id == build_items.size() + 1);
-            build_items.emplace_back(instance_id, t, instance->printable);
+            build_items.emplace_back(instance_id, t, *instance);
 
             stream << "  </" << OBJECT_TAG << ">\n";
 
@@ -3426,7 +3548,10 @@ namespace Slic3r {
         for (const BuildItem& item : build_items) {
             stream << "  <" << ITEM_TAG << " " << OBJECTID_ATTR << "=\"" << item.id << "\" " << TRANSFORM_ATTR << "=\"";
             add_transformation(stream, item.transform);
-            stream << "\" " << PRINTABLE_ATTR << "=\"" << item.printable << "\"/>\n";
+            stream << "\" " << PRINTABLE_ATTR << "=\"" << item.printable << "\"";
+            if (!item.view_transparency.empty())
+                stream << ' ' << VIEW_TRANSPARENCY_ATTR << "=\"" << item.view_transparency << "\"";
+            stream << "/>\n";
         }
 
         stream << " </" << BUILD_TAG << ">\n";

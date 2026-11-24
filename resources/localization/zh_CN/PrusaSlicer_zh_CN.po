@@ -29540,3 +29540,138 @@ msgstr "单击旋转 90°，拖动可调整角度。"
 
 msgid "Set as rotation reference"
 msgstr "设为旋转基准"
+
+msgid "Chamfer / Fillet"
+msgstr "倒角 / 圆角"
+
+msgid "Chamfer"
+msgstr "倒角"
+
+msgid "Fillet"
+msgstr "圆角"
+
+msgid "Direct"
+msgstr "直接选边"
+
+msgid "Two points"
+msgstr "两点直棱"
+
+msgid "Three points"
+msgstr "三点圆边"
+
+msgid "Setback (mm)"
+msgstr "退距 (mm)"
+
+msgid "Radius (mm)"
+msgstr "半径 (mm)"
+
+#, c-format
+msgid "Preliminary limit: %.4f mm"
+msgstr "预检上限：%.4f mm"
+
+#, c-format
+msgid "Points: %d / %d"
+msgstr "取点：%d / %d"
+
+#, c-format
+msgid "Selected edges: %d"
+msgstr "已选边：%d"
+
+msgid "Show result"
+msgstr "显示加工结果"
+
+msgid "Select one independent model part. Use Set as a Separated Object for shared copies."
+msgstr "请选择一个独立零件。同源副本请先使用「设置为独立的对象」。"
+
+msgid "Finding eligible edges..."
+msgstr "正在识别可加工边…"
+
+msgid "No supported straight edges or cylindrical hole rims were found."
+msgstr "未找到支持的直棱或圆柱孔口。"
+
+msgid "No eligible edge here. Move closer to a visible edge."
+msgstr "未找到可选边，请靠近一条可见的边。"
+
+msgid "More than one edge is nearby. Rotate the view or use point selection."
+msgstr "附近有多条边。请转动视角或使用辅助选点。"
+
+msgid "Pick points on the same straight edge or hole rim."
+msgstr "请在同一条直棱或同一圈孔口上取点。"
+
+msgid "Spread the points further apart along the edge."
+msgstr "请沿同一条边分散取点。"
+
+msgid "Edge finishing requires one closed, connected mesh without self-intersections."
+msgstr "选边加工需要一个闭合、连通且无自交的实体网格。"
+
+msgid "Enter a positive size that can be represented by this mesh."
+msgstr "请输入当前网格精度能够表示的正尺寸。"
+
+msgid "Selected edges meet. Remove one of the highlighted edges."
+msgstr "所选边相接，请移除相接的其中一条边。"
+
+msgid "The size exceeds the available space at the highlighted edge."
+msgstr "尺寸超过高亮边的可用范围。"
+
+msgid "The cuts touch or overlap. Reduce the size or remove an edge."
+msgstr "加工区域相接或重叠。请减小尺寸或移除一条边。"
+
+msgid "The cut reaches a neighboring surface. Reduce the size."
+msgstr "加工会碰到邻近表面，请减小尺寸。"
+
+msgid "The result could not be verified as a solid mesh. Try a smaller size or fewer edges."
+msgstr "无法确认结果为有效实体。请尝试减小尺寸或减少选边。"
+
+msgid "Calculating preview..."
+msgstr "正在计算预览…"
+
+msgid "Discarding previous preview..."
+msgstr "正在丢弃上一项预览…"
+
+msgid "A wall near the cut is thinner than the reference extrusion width. Check the sliced toolpaths."
+msgstr "加工区附近有壁薄于参考挤出线宽。请在切片预览中核对路径。"
+
+#, c-format
+msgid "Z change to keep the part on the bed: %.4f mm"
+msgstr "为保持贴床，Z 将移动 %.4f mm"
+
+msgid "Applying this cut clears painted supports, seams, materials and fuzzy skin on this part. Continue?"
+msgstr "应用后将清除该零件上已涂绘的支撑、接缝、材料和模糊表面。是否继续？"
+
+msgid "Surface painting was removed after edge finishing."
+msgstr "选边加工后已清除该零件的表面涂绘。"
+
+msgid "Transparency"
+msgstr "透明度"
+
+msgid "Whole part"
+msgstr "整件"
+
+msgid "Bodies"
+msgstr "实体"
+
+msgid "Faces"
+msgstr "面"
+
+msgid "Pick through transparent surfaces"
+msgstr "穿透透明层选取"
+
+msgid "Cylindrical hole wall"
+msgstr "圆柱孔壁"
+
+#, c-format
+msgid "Selected faces: %d"
+msgstr "已选面：%d"
+
+#, c-format
+msgid "Solid %d"
+msgstr "实体 %d"
+
+msgid "Reset transparency"
+msgstr "重置透明度"
+
+msgid "Reset all face transparency"
+msgstr "重置所有面的透明度"
+
+msgid "Select one part instance."
+msgstr "请选择一个零件实例。"
