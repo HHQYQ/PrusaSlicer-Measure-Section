@@ -119,6 +119,9 @@ private:
 class GLGizmoRotate3D : public GLGizmoBase
 {
     std::array<GLGizmoRotate, 3> m_gizmos;
+    Point m_press_position{0, 0};
+    int m_drag_axis = -1;
+    bool m_has_dragged = false;
 
 public:
     GLGizmoRotate3D(GLCanvas3D& parent, const std::string& icon_filename, unsigned int sprite_id);
@@ -126,14 +129,7 @@ public:
     Vec3d get_rotation() const { return Vec3d(m_gizmos[X].get_angle(), m_gizmos[Y].get_angle(), m_gizmos[Z].get_angle()); }
     void set_rotation(const Vec3d& rotation) { m_gizmos[X].set_angle(rotation.x()); m_gizmos[Y].set_angle(rotation.y()); m_gizmos[Z].set_angle(rotation.z()); }
 
-    std::string get_tooltip() const override {
-        std::string tooltip = m_gizmos[X].get_tooltip();
-        if (tooltip.empty())
-            tooltip = m_gizmos[Y].get_tooltip();
-        if (tooltip.empty())
-            tooltip = m_gizmos[Z].get_tooltip();
-        return tooltip;
-    }
+    std::string get_tooltip() const override;
 
     /// <summary>
     /// Postpone to Rotation
@@ -174,6 +170,7 @@ protected:
     void on_render_input_window(float x, float y, float bottom_limit) override;
 
 private:
+    void apply_rotation(bool independent);
 
     class RotoptimzeWindow
     {

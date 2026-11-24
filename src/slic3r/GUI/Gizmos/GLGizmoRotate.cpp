@@ -16,6 +16,7 @@
 #include "libslic3r/Model.hpp"
 
 #include <GL/glew.h>
+#include <wx/settings.h>
 
 namespace Slic3r {
 namespace GUI {
@@ -521,27 +522,62 @@ GLGizmoRotate3D::GLGizmoRotate3D(GLCanvas3D& parent, const std::string& icon_fil
     load_rotoptimize_state();
 }
 
+std::string GLGizmoRotate3D::get_tooltip() const
+{
+    for (const GLGizmoRotate& gizmo : m_gizmos) {
+        std::string tooltip = gizmo.get_tooltip();
+        if (!tooltip.empty()) {
+            if (!m_dragging)
+                tooltip += "\n" + _u8L("Click to rotate 90 degrees. Drag to choose an angle.");
+            return tooltip;
+        }
+    }
+    return {};
+}
+
 bool GLGizmoRotate3D::on_mouse(const wxMouseEvent &mouse_event)
 {
-    if (mouse_event.Dragging() && m_dragging) {
-        // Apply new temporary rotations
-        TransformationType transformation_type;
-        if (m_parent.get_selection().is_wipe_tower())
-            transformation_type = TransformationType::World_Relative_Joint;
-        else {
-            switch (wxGetApp().obj_manipul()->get_coordinates_type())
-            {
-            default:
-            case ECoordinatesType::World:    { transformation_type = TransformationType::World_Relative_Joint; break; }
-            case ECoordinatesType::Instance: { transformation_type = TransformationType::Instance_Relative_Joint; break; }
-            case ECoordinatesType::Local:    { transformation_type = TransformationType::Local_Relative_Joint; break; }
-            }
+    const Point position(mouse_event.GetX(), mouse_event.GetY());
+    if (mouse_event.LeftDown())
+        m_press_position = position;
+
+    if (!m_dragging)
+        return use_grabbers(mouse_event);
+
+    if (mouse_event.Dragging() || mouse_event.LeftUp()) {
+        const auto distance = (position - m_press_position).cwiseAbs().eval();
+        m_has_dragged = m_has_dragged ||
+            distance.x() >= std::max(3, wxSystemSettings::GetMetric(wxSYS_DRAG_X)) ||
+            distance.y() >= std::max(3, wxSystemSettings::GetMetric(wxSYS_DRAG_Y));
+        if (m_has_dragged) {
+            on_dragging(UpdateData(m_parent.mouse_ray(position), position));
+            apply_rotation(mouse_event.AltDown());
+            wxGetApp().obj_manipul()->set_dirty();
+            m_parent.set_as_dirty();
+        } else if (mouse_event.LeftUp() && m_hover_id == m_drag_axis) {
+            m_gizmos[m_drag_axis].set_angle(0.5 * PI);
+            apply_rotation(mouse_event.AltDown());
         }
-        if (mouse_event.AltDown())
-            transformation_type.set_independent();
-        m_parent.get_selection().rotate(get_rotation(), transformation_type);
+        if (mouse_event.Dragging())
+            return true;
     }
     return use_grabbers(mouse_event);
+}
+
+void GLGizmoRotate3D::apply_rotation(bool independent)
+{
+    Selection& selection = m_parent.get_selection();
+    TransformationType transformation_type = TransformationType::World_Relative_Joint;
+    if (!selection.is_wipe_tower()) {
+        switch (wxGetApp().obj_manipul()->get_coordinates_type()) {
+        case ECoordinatesType::Instance: transformation_type = TransformationType::Instance_Relative_Joint; break;
+        case ECoordinatesType::Local: transformation_type = TransformationType::Local_Relative_Joint; break;
+        default: break;
+        }
+    }
+    if (independent)
+        transformation_type.set_independent();
+    selection.rotate(get_rotation(), transformation_type);
 }
 
 void GLGizmoRotate3D::data_changed(bool is_serializing) {
@@ -583,20 +619,24 @@ bool GLGizmoRotate3D::on_is_activable() const
 void GLGizmoRotate3D::on_start_dragging()
 {
     assert(0 <= m_hover_id && m_hover_id < 3);
-    m_gizmos[m_hover_id].start_dragging();
+    m_drag_axis = m_hover_id;
+    m_has_dragged = false;
+    m_gizmos[m_drag_axis].start_dragging();
 }
 
 void GLGizmoRotate3D::on_stop_dragging()
 {
-    assert(0 <= m_hover_id && m_hover_id < 3);
-    m_parent.do_rotate(L("Gizmo-Rotate"));
-    m_gizmos[m_hover_id].stop_dragging();
+    assert(0 <= m_drag_axis && m_drag_axis < 3);
+    if (m_has_dragged || m_gizmos[m_drag_axis].get_angle() != 0.)
+        m_parent.do_rotate(L("Gizmo-Rotate"));
+    m_gizmos[m_drag_axis].stop_dragging();
+    m_drag_axis = -1;
 }
 
 void GLGizmoRotate3D::on_dragging(const UpdateData &data)
 {
-    assert(0 <= m_hover_id && m_hover_id < 3);
-    m_gizmos[m_hover_id].dragging(data);
+    assert(0 <= m_drag_axis && m_drag_axis < 3);
+    m_gizmos[m_drag_axis].dragging(data);
 }
 
 void GLGizmoRotate3D::on_render()

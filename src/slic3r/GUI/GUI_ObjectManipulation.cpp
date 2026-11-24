@@ -14,6 +14,8 @@
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/Model.hpp"
 #include "libslic3r/Geometry.hpp"
+#include "libslic3r/BuildVolume.hpp"
+#include "libslic3r/MultipleBeds.hpp"
 #include "Selection.hpp"
 #include "Plater.hpp"
 #include "MainFrame.hpp"
@@ -508,6 +510,42 @@ ObjectManipulation::ObjectManipulation(wxWindow* parent) :
 
     m_main_grid_sizer->Add(m_check_inch);
 
+    auto* auto_orient = new wxButton(parent, wxID_ANY, _L("Auto orient and center"),
+        wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
+    auto_orient->Bind(wxEVT_UPDATE_UI, [this](wxUpdateUIEvent& e) {
+        const Plater* plater = wxGetApp().plater();
+        const auto* canvas = plater ? plater->canvas3D() : nullptr;
+        if (!canvas) {
+            e.Enable(false);
+            return;
+        }
+        const Selection& selection = canvas->get_selection();
+        e.Enable(is_enabled() && selection.get_mode() == Selection::Instance &&
+            selection.is_single_full_instance() && !selection.is_any_cut_volume() &&
+            !canvas->is_dragging() && !canvas->get_gizmos_manager().is_in_editing_mode());
+    });
+    auto_orient->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+        Plater* plater = wxGetApp().plater();
+        GLCanvas3D* canvas = plater->canvas3D();
+        Selection& selection = canvas->get_selection();
+        const BuildVolume& bed = plater->build_volume();
+        if (selection.get_mode() != Selection::Instance || !selection.is_single_full_instance() ||
+            selection.is_any_cut_volume() || !bed.valid())
+            return;
+
+        if (!selection.get_scaled_instance_bounding_box().defined)
+            return;
+        selection.flattening_rotate_to_largest_face();
+        const BoundingBoxf3& bounds = selection.get_scaled_instance_bounding_box();
+        const Vec2d center = bed.bed_center() + s_multiple_beds.get_bed_translation(s_multiple_beds.get_active_bed()).head<2>();
+        const Vec2d shift = center - bounds.center().head<2>();
+        const double min_z = bounds.min.z() - selection.get_first_volume()->get_sla_shift_z();
+        selection.translate(selection.get_object_idx(), selection.get_instance_idx(), Vec3d(shift.x(), shift.y(), -min_z));
+        canvas->do_rotate(L("Auto orient and center"));
+        UpdateAndShow(true);
+    });
+    m_main_grid_sizer->Add(auto_orient, 0, wxALIGN_LEFT);
+
     m_og->activate();
     m_og->sizer->Clear(true);
     m_og->sizer->Add(m_main_grid_sizer, 1, wxEXPAND | wxALL, border);
@@ -732,6 +770,9 @@ void ObjectManipulation::update_settings_value(const Selection& selection)
         m_new_size = selection.get_bounding_box_in_current_reference_system().first.size();
         m_new_enabled  = true;
     }
+
+    if (is_relative_rotation())
+        m_new_rotation = m_cache.relative_rotation;
 }
 
 void ObjectManipulation::update_if_dirty()
@@ -968,11 +1009,12 @@ void ObjectManipulation::change_position_value(int axis, double value)
 
 void ObjectManipulation::change_rotation_value(int axis, double value)
 {
-    if (std::abs(m_cache.rotation_rounded(axis) - value) < EPSILON)
+    const bool show_relative = is_relative_rotation();
+    if (!show_relative && std::abs(m_cache.rotation_rounded(axis) - value) < EPSILON)
         return;
 
-    Vec3d rotation = m_cache.rotation;
-    rotation(axis) = value;
+    Vec3d delta = Vec3d::Zero();
+    delta(axis) = show_relative ? value : value - m_cache.rotation(axis);
 
     GLCanvas3D* canvas = wxGetApp().plater()->canvas3D();
     Selection& selection = canvas->get_selection();
@@ -988,14 +1030,15 @@ void ObjectManipulation::change_rotation_value(int axis, double value)
     if (is_instance_coordinates())
         transformation_type.set_instance();
 
-    selection.setup_cache();
-	selection.rotate(
-		(M_PI / 180.0) * (transformation_type.absolute() ? rotation : rotation - m_cache.rotation), 
-		transformation_type);
-    canvas->do_rotate(L("Set Orientation"));
+    if (std::abs(delta(axis)) > EPSILON) {
+        selection.setup_cache();
+        selection.rotate((M_PI / 180.0) * delta, transformation_type);
+        canvas->do_rotate(L("Set Orientation"));
+    }
 
-    m_cache.rotation = rotation;
-	m_cache.rotation_rounded(axis) = DBL_MAX;
+    if (show_relative)
+        m_cache.relative_rotation(axis) = value;
+    m_cache.rotation_rounded(axis) = DBL_MAX;
     this->UpdateAndShow(true);
 }
 
@@ -1154,6 +1197,8 @@ void ObjectManipulation::set_coordinates_type(ECoordinatesType type)
         return;
 
     m_coordinates_type = type;
+    m_cache.relative_rotation.setZero();
+    m_cache.rotation_rounded.setConstant(DBL_MAX);
     m_word_local_combo->SetSelection((int)m_coordinates_type);
     this->UpdateAndShow(true);
     GLCanvas3D* canvas = wxGetApp().plater()->canvas3D();
@@ -1254,14 +1299,14 @@ ManipulationEditor::ManipulationEditor(ObjectManipulation* parent,
     this->Bind(wxEVT_TEXT_ENTER, [this, parent](wxEvent&)
     {
         m_enter_pressed = true;
-        parent->on_change(m_opt_key, m_axis, get_value());
+        commit(parent);
     }, this->GetId());
 
     this->Bind(wxEVT_KILL_FOCUS, [this, parent](wxFocusEvent& e)
     {
         parent->set_focused_editor(nullptr);
 
-        if (!m_enter_pressed)
+        if (!m_enter_pressed || (has_opt_key("rotation") && parent->is_relative_rotation()))
             kill_focus(parent);
 
         e.Skip();
@@ -1269,6 +1314,7 @@ ManipulationEditor::ManipulationEditor(ObjectManipulation* parent,
 
     this->GetTextCtrl()->Bind(wxEVT_SET_FOCUS, [this, parent](wxFocusEvent& e)
     {
+        m_enter_pressed = false;
         parent->set_focused_editor(this);
 
         // needed to show the visual hints in 3D scene
@@ -1308,21 +1354,21 @@ void ManipulationEditor::sys_color_changed(ObjectManipulation* parent)
 #endif // _WIN32
 }
 
-double ManipulationEditor::get_value()
+double ManipulationEditor::get_value(bool* valid)
 {
     wxString str = GetValue();
 
-    double value;
+    double value = 0.0;
     const char dec_sep = is_decimal_separator_point() ? '.' : ',';
     const char dec_sep_alt = dec_sep == '.' ? ',' : '.';
     // Replace the first incorrect separator in decimal number.
     if (str.Replace(dec_sep_alt, dec_sep, false) != 0)
         SetValue(str);
 
-    if (str == ".")
-        value = 0.0;
-
-    if ((str.IsEmpty() || !str.ToDouble(&value)) && !m_valid_value.IsEmpty()) {
+    const bool parsed = str.ToDouble(&value) && std::isfinite(value);
+    if (valid)
+        *valid = parsed;
+    if (!parsed && !m_valid_value.IsEmpty()) {
         str = m_valid_value;
         SetValue(str);
         str.ToDouble(&value);
@@ -1337,11 +1383,30 @@ void ManipulationEditor::set_value(const wxString& new_value)
         return;
     m_valid_value = new_value;
     SetValue(m_valid_value);
+    GetTextCtrl()->DiscardEdits();
+}
+
+void ManipulationEditor::commit(ObjectManipulation* parent)
+{
+    if (has_opt_key("rotation") && parent->is_relative_rotation()) {
+        if (!GetTextCtrl()->IsModified())
+            return;
+        bool valid;
+        const double value = get_value(&valid);
+        GetTextCtrl()->DiscardEdits();
+        if (valid) {
+            const wxString entered_text = GetValue();
+            parent->on_change(m_opt_key, m_axis, value);
+            set_value(entered_text);
+        }
+        return;
+    }
+    parent->on_change(m_opt_key, m_axis, get_value());
 }
 
 void ManipulationEditor::kill_focus(ObjectManipulation* parent)
 {
-    parent->on_change(m_opt_key, m_axis, get_value());
+    commit(parent);
 
     // if the change does not come from the user pressing the ENTER key
     // we need to hide the visual hints in 3D scene

@@ -1143,6 +1143,75 @@ void Selection::flattening_rotate(const Vec3d& normal)
     this->set_bounding_boxes_dirty();
 }
 
+void Selection::flattening_rotate_to_largest_face()
+{
+    assert(is_single_full_instance());
+    const ModelObject& object = *m_model->objects[get_object_idx()];
+    TriangleMesh hull;
+    size_t parts = 0;
+    for (const ModelVolume* volume : object.volumes) {
+        if (!volume->is_model_part())
+            continue;
+        TriangleMesh part_hull = volume->get_convex_hull();
+        part_hull.transform(volume->get_matrix(), true);
+        hull.merge(part_hull);
+        ++parts;
+    }
+    if (parts > 1)
+        hull = hull.convex_hull_3d();
+    if (hull.empty())
+        return;
+
+    const Matrix3d linear = get_first_volume()->get_instance_transformation().get_matrix().linear();
+    const Matrix3d normal_matrix = linear.inverse().transpose();
+    const auto normals = its_face_normals(hull.its);
+    const auto neighbors = its_face_neighbors(hull.its);
+    std::vector<bool> visited(normals.size(), false);
+    std::vector<int> pending;
+    Vec3d best_normal = Vec3d::Zero();
+    double best_area = 0.0;
+    double best_down = -2.0;
+
+    for (int i = 0; i < int(normals.size()); ++i) {
+        if (visited[i])
+            continue;
+        const Vec3d normal = normals[i].cast<double>().normalized();
+        if (!normal.allFinite() || normal.isZero())
+            continue;
+        double area = 0.0;
+        visited[i] = true;
+        pending.push_back(i);
+        // Sum adjacent coplanar triangles so the choice does not depend on triangulation.
+        while (!pending.empty()) {
+            const int index = pending.back();
+            pending.pop_back();
+            const Vec3i& face = hull.its.indices[index];
+            const Vec3d a = hull.its.vertices[face[0]].cast<double>();
+            const Vec3d b = linear * (hull.its.vertices[face[1]].cast<double>() - a);
+            const Vec3d c = linear * (hull.its.vertices[face[2]].cast<double>() - a);
+            area += 0.5 * b.cross(c).norm();
+
+            for (int edge = 0; edge < 3; ++edge) {
+                const int neighbor = neighbors[index][edge];
+                if (neighbor >= 0 && !visited[neighbor] && normal.isApprox(normals[neighbor].cast<double>(), 1e-4)) {
+                    visited[neighbor] = true;
+                    pending.push_back(neighbor);
+                }
+            }
+        }
+        const double down = -(normal_matrix * normal).normalized().z();
+        const double tolerance = 1e-6 * std::max(area, best_area);
+        if (area > best_area + tolerance || (area > 0.0 && std::abs(area - best_area) <= tolerance && down > best_down)) {
+            best_area = area;
+            best_down = down;
+            best_normal = normal;
+        }
+    }
+
+    if (best_area > 0.0)
+        flattening_rotate(best_normal);
+}
+
 void Selection::scale(const Vec3d& scale, TransformationType transformation_type)
 {
     scale_and_translate(scale, Vec3d::Zero(), transformation_type);

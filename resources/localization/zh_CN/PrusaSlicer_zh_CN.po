@@ -29531,3 +29531,9 @@ msgstr "反转第二剖切方向"
 
 msgid "Release the section slider to measure."
 msgstr "松开剖切滑块后即可测量。"
+
+msgid "Auto orient and center"
+msgstr "自动朝向并居中"
+
+msgid "Click to rotate 90 degrees. Drag to choose an angle."
+msgstr "单击旋转 90°，拖动可调整角度。"

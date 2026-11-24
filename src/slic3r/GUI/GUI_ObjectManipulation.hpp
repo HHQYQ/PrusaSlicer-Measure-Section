@@ -73,7 +73,8 @@ public:
     bool                has_opt_key(const std::string& key) { return m_opt_key == key; }
 
 private:
-    double              get_value();
+    double              get_value(bool* valid = nullptr);
+    void                commit(ObjectManipulation* parent);
 };
 
 
@@ -84,12 +85,16 @@ public:
     static const double mm_to_in;
 
 private:
+    friend class ManipulationEditor;
+    bool is_relative_rotation() const { return m_new_rotate_label_string == "Rotate (relative)"; }
+
     struct Cache
     {
         Vec3d position;
         Vec3d position_rounded;
         Vec3d rotation;
         Vec3d rotation_rounded;
+        Vec3d relative_rotation;
         Vec3d scale;
         Vec3d scale_rounded;
         Vec3d size;
@@ -105,6 +110,7 @@ private:
         {
             position = position_rounded = Vec3d(DBL_MAX, DBL_MAX, DBL_MAX);
             rotation = rotation_rounded = Vec3d(DBL_MAX, DBL_MAX, DBL_MAX);
+            relative_rotation.setZero();
             scale = scale_rounded = Vec3d(DBL_MAX, DBL_MAX, DBL_MAX);
             size = size_rounded = Vec3d(DBL_MAX, DBL_MAX, DBL_MAX);
             move_label_string = wxString();
