@@ -159,7 +159,7 @@ jobs:
           if ($setup.Name -ne "PrusaSlicer-$version-Three-Point-Circle-x64-Setup.exe" -or
               $version -ne $env:PROJECT_VERSION -or
               $setup.VersionInfo.ProductVersionRaw.ToString() -ne $env:PROJECT_VERSION -or
-              $setup.VersionInfo.ProductName -ne $env:PROJECT_NAME) {
+              $setup.VersionInfo.ProductName.TrimEnd() -ne $env:PROJECT_NAME) {
             throw 'Setup filename or branding metadata is incorrect.'
           }
           "setup=$($setup.FullName)" >> $env:GITHUB_OUTPUT
