@@ -771,8 +771,16 @@ void ObjectManipulation::update_settings_value(const Selection& selection)
         m_new_enabled  = true;
     }
 
-    if (is_relative_rotation())
+    if (is_relative_rotation()) {
+        // A rotation made elsewhere starts a new reference for the sidebar.
+        if (m_cache.relative_rotation_orientation &&
+            !selection.get_first_volume()->world_matrix().linear().isApprox(*m_cache.relative_rotation_orientation)) {
+            m_cache.relative_rotation.setZero();
+            m_cache.relative_rotation_orientation.reset();
+            m_cache.rotation_rounded.setConstant(DBL_MAX);
+        }
         m_new_rotation = m_cache.relative_rotation;
+    }
 }
 
 void ObjectManipulation::update_if_dirty()
@@ -1013,11 +1021,14 @@ void ObjectManipulation::change_rotation_value(int axis, double value)
     if (!show_relative && std::abs(m_cache.rotation_rounded(axis) - value) < EPSILON)
         return;
 
-    Vec3d delta = Vec3d::Zero();
-    delta(axis) = show_relative ? value : value - m_cache.rotation(axis);
+    Vec3d rotation = show_relative ? m_cache.relative_rotation : m_cache.rotation;
+    const double delta = value - rotation(axis);
+    rotation(axis) = value;
 
     GLCanvas3D* canvas = wxGetApp().plater()->canvas3D();
     Selection& selection = canvas->get_selection();
+    if (selection.is_empty())
+        return;
 
     TransformationType transformation_type;
     transformation_type.set_relative();
@@ -1030,14 +1041,19 @@ void ObjectManipulation::change_rotation_value(int axis, double value)
     if (is_instance_coordinates())
         transformation_type.set_instance();
 
-    if (std::abs(delta(axis)) > EPSILON) {
+    if (std::abs(delta) > EPSILON) {
         selection.setup_cache();
-        selection.rotate((M_PI / 180.0) * delta, transformation_type);
+        if (show_relative) {
+            const Vec3d previous = (M_PI / 180.0) * m_cache.relative_rotation;
+            selection.rotate((M_PI / 180.0) * rotation, transformation_type, &previous);
+            m_cache.relative_rotation = rotation;
+            m_cache.relative_rotation_orientation = selection.get_first_volume()->world_matrix().linear();
+        } else {
+            selection.rotate((M_PI / 180.0) * (rotation - m_cache.rotation), transformation_type);
+        }
         canvas->do_rotate(L("Set Orientation"));
     }
 
-    if (show_relative)
-        m_cache.relative_rotation(axis) = value;
     m_cache.rotation_rounded(axis) = DBL_MAX;
     this->UpdateAndShow(true);
 }
@@ -1198,6 +1214,7 @@ void ObjectManipulation::set_coordinates_type(ECoordinatesType type)
 
     m_coordinates_type = type;
     m_cache.relative_rotation.setZero();
+    m_cache.relative_rotation_orientation.reset();
     m_cache.rotation_rounded.setConstant(DBL_MAX);
     m_word_local_combo->SetSelection((int)m_coordinates_type);
     this->UpdateAndShow(true);

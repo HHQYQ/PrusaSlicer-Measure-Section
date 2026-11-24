@@ -39,12 +39,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Read project name and version
+        run: |
+          $branding = Get-Content -Raw -LiteralPath 'build-utils/project-branding.iss'
+          if ($branding -notmatch '(?m)^#define ProjectName "([^"\r\n]+)"\r?$') { throw 'Missing project name' }
+          "PROJECT_NAME=$($Matches[1])" >> $env:GITHUB_ENV
+          if ($branding -notmatch '(?m)^#define ProjectVersion "(\d+\.\d+\.\d+\.\d+)"\r?$') { throw 'Missing project version' }
+          "PROJECT_VERSION=$($Matches[1])" >> $env:GITHUB_ENV
+
       - name: Restore compiled application files
         id: app-cache
         uses: actions/cache/restore@v4
         with:
           path: payload
-          key: prusa-297-win2022-v143-x64-app-v1-${{ hashFiles('src/**', 'resources/**', 'deps/**', 'bundled_deps/**', 'cmake/**', 'CMakeLists.txt', 'version.inc') }}
+          key: prusa-297-win2022-v143-x64-app-v1-${{ hashFiles('src/**', 'resources/**', 'deps/**', 'bundled_deps/**', 'cmake/**', 'CMakeLists.txt', 'version.inc', 'build-utils/project-branding.iss') }}
 
       - name: Restore compiled dependencies
         if: ${{ steps.app-cache.outputs.cache-hit != 'true' }}
@@ -110,7 +118,7 @@ jobs:
       - name: Stage installer metadata and Visual C++ runtime
         run: |
           @(
-            'PrusaSlicer 2.9.7 — Three-Point Circle'
+            "$env:PROJECT_NAME $env:PROJECT_VERSION"
             'Based on PrusaSlicer 2.9.7. This is an independent build.'
             "Source and build scripts: $env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/tree/$env:GITHUB_SHA"
             'License: GNU AGPL version 3 or later, see LICENSE.txt.'
@@ -149,8 +157,10 @@ jobs:
           $setup = $packages[0]
           $version = $setup.VersionInfo.FileVersionRaw.ToString()
           if ($setup.Name -ne "PrusaSlicer-$version-Three-Point-Circle-x64-Setup.exe" -or
-              $setup.VersionInfo.ProductVersionRaw.ToString() -ne $version) {
-            throw 'Setup filename, file version and product version differ.'
+              $version -ne $env:PROJECT_VERSION -or
+              $setup.VersionInfo.ProductVersionRaw.ToString() -ne $env:PROJECT_VERSION -or
+              $setup.VersionInfo.ProductName -ne $env:PROJECT_NAME) {
+            throw 'Setup filename or branding metadata is incorrect.'
           }
           "setup=$($setup.FullName)" >> $env:GITHUB_OUTPUT
           "version=$version" >> $env:GITHUB_OUTPUT
@@ -175,12 +185,11 @@ jobs:
       - name: Test installation, in-place replacement and application startup
         env:
           SETUP_EXE: ${{ steps.package.outputs.setup }}
-          INSTALLER_VERSION: ${{ steps.package.outputs.version }}
           PREVIOUS_SETUP: ${{ steps.previous.outputs.setup }}
         run: |
           $setup = $env:SETUP_EXE
           $installDir = Join-Path $env:RUNNER_TEMP 'PrusaThreePointTest'
-          $parameters = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOICONS')
+          $parameters = @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART')
           $baseline = if ($env:PREVIOUS_SETUP) { $env:PREVIOUS_SETUP } else { $setup }
           Write-Host "Initial installer: $(Split-Path $baseline -Leaf)"
           $install = Start-Process -FilePath $baseline -ArgumentList ($parameters + "/DIR=""$installDir""") -Wait -PassThru
@@ -199,8 +208,16 @@ jobs:
           if ($upgrade.ExitCode -ne 0) { throw "In-place installation exit code: $($upgrade.ExitCode)" }
           $uninstallRoot = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall'
           $entry = Get-ItemProperty -LiteralPath "$uninstallRoot\{CD88DF34-AB88-423B-870D-4DA3AC903830}_is1"
-          if ($entry.InstallLocation.TrimEnd('\') -ne $installDir -or $entry.DisplayVersion -ne $env:INSTALLER_VERSION) {
-            throw 'The registered directory or installed version is incorrect.'
+          $displayName = "$env:PROJECT_NAME $env:PROJECT_VERSION"
+          if ($entry.InstallLocation.TrimEnd('\') -ne $installDir -or $entry.DisplayVersion -ne $env:PROJECT_VERSION -or
+              $entry.DisplayName -ne $displayName) {
+            throw 'The registered directory, name or version is incorrect.'
+          }
+          $versionInfo = (Get-Item -LiteralPath $installedExe).VersionInfo
+          $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) "$env:PROJECT_NAME\$env:PROJECT_NAME.lnk"
+          if ($versionInfo.ProductName -ne $env:PROJECT_NAME -or $versionInfo.FileDescription -ne $displayName -or
+              $versionInfo.ProductVersionRaw.ToString() -ne $env:PROJECT_VERSION -or !(Test-Path -LiteralPath $shortcut)) {
+            throw 'The installed executable branding or Start menu shortcut is incorrect.'
           }
           if ((Get-FileHash -LiteralPath $installedExe).Hash -ne $expectedHash -or
               (Get-FileHash -LiteralPath $preset).Hash -ne $presetHash) {
@@ -253,5 +270,5 @@ jobs:
           $version = '${{ steps.package.outputs.version }}'
           $tag = "v$version-three-point-circle"
           $assets = @(Get-ChildItem -LiteralPath installer-output -File | ForEach-Object FullName)
-          gh release create $tag @assets --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "PrusaSlicer $version — 三点测圆与复合剖切" --notes-file "build-utils/release-notes-$version.md"
+          gh release create $tag @assets --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "$env:PROJECT_NAME $version" --notes-file "build-utils/release-notes-$version.md"
           if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }

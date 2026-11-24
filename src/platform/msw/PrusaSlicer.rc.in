@@ -1,16 +1,16 @@
 1 VERSIONINFO
-FILEVERSION @SLIC3R_RC_VERSION@
-PRODUCTVERSION @SLIC3R_RC_VERSION@
+FILEVERSION @MEASURE_SECTION_RC_VERSION@
+PRODUCTVERSION @MEASURE_SECTION_RC_VERSION@
 {
  BLOCK "StringFileInfo"
  {
   BLOCK "040904E4"
   {
    VALUE "CompanyName", "Prusa Research"
-   VALUE "FileDescription", "@SLIC3R_APP_NAME@"
-   VALUE "FileVersion", "@SLIC3R_BUILD_ID@"
-   VALUE "ProductName", "@SLIC3R_APP_NAME@"
-   VALUE "ProductVersion", "@SLIC3R_BUILD_ID@"
+   VALUE "FileDescription", "@MEASURE_SECTION_NAME@ @MEASURE_SECTION_VERSION@"
+   VALUE "FileVersion", "@MEASURE_SECTION_VERSION@"
+   VALUE "ProductName", "@MEASURE_SECTION_NAME@"
+   VALUE "ProductVersion", "@MEASURE_SECTION_VERSION@"
    VALUE "InternalName", "@SLIC3R_APP_NAME@"
    VALUE "LegalCopyright", "Copyright \251 2016-2026 Prusa Research, \251 2011-2018 Alessandro Ranellucci"
    VALUE "OriginalFilename", "prusa-slicer.exe"

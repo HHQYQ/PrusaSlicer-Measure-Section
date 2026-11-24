@@ -6,6 +6,7 @@
 #define slic3r_GUI_ObjectManipulation_hpp_
 
 #include <memory>
+#include <optional>
 
 #include "GUI_ObjectSettings.hpp"
 #include "GUI_ObjectList.hpp"
@@ -95,6 +96,7 @@ private:
         Vec3d rotation;
         Vec3d rotation_rounded;
         Vec3d relative_rotation;
+        std::optional<Matrix3d> relative_rotation_orientation;
         Vec3d scale;
         Vec3d scale_rounded;
         Vec3d size;
@@ -111,6 +113,7 @@ private:
             position = position_rounded = Vec3d(DBL_MAX, DBL_MAX, DBL_MAX);
             rotation = rotation_rounded = Vec3d(DBL_MAX, DBL_MAX, DBL_MAX);
             relative_rotation.setZero();
+            relative_rotation_orientation.reset();
             scale = scale_rounded = Vec3d(DBL_MAX, DBL_MAX, DBL_MAX);
             size = size_rounded = Vec3d(DBL_MAX, DBL_MAX, DBL_MAX);
             move_label_string = wxString();

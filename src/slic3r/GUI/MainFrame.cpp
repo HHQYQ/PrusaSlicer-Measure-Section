@@ -576,9 +576,13 @@ void MainFrame::update_title()
         }
     }
 
+    if (wxGetApp().is_editor()) {
+        SetTitle(title + wxString(MEASURE_SECTION_NAME " " MEASURE_SECTION_VERSION));
+        return;
+    }
+
     std::string build_id = SLIC3R_BUILD_ID;
-    if (! wxGetApp().is_editor())
-        boost::replace_first(build_id, SLIC3R_APP_NAME, GCODEVIEWER_APP_NAME);
+    boost::replace_first(build_id, SLIC3R_APP_NAME, GCODEVIEWER_APP_NAME);
     size_t 		idx_plus = build_id.find('+');
     if (idx_plus != build_id.npos) {
     	// Parse what is behind the '+'. If there is a number, then it is a build number after the label, and full build ID is shown.
@@ -595,9 +599,6 @@ void MainFrame::update_title()
     }
 
     title += wxString(build_id);
-    if (wxGetApp().is_editor())
-        title += (" " + _L("based on Slic3r"));
-
     SetTitle(title);
 }
 

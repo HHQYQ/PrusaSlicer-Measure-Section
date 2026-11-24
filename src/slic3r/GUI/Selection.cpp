@@ -1010,8 +1010,8 @@ void Selection::translate(const Vec3d& displacement, TransformationType transfor
     wxGetApp().plater()->canvas3D()->requires_check_outside_state();
 }
 
-// Rotate an object around one of the axes. Only one rotation component is expected to be changing.
-void Selection::rotate(const Vec3d& rotation, TransformationType transformation_type)
+// Without a previous target, rotation is a single-axis increment.
+void Selection::rotate(const Vec3d& rotation, TransformationType transformation_type, const Vec3d* previous_rotation)
 {
     if (!m_valid)
         return;
@@ -1019,9 +1019,16 @@ void Selection::rotate(const Vec3d& rotation, TransformationType transformation_
     assert(transformation_type.relative() || (transformation_type.absolute() && transformation_type.local()));
 
     bool requires_general_synchronization = false;
+    auto target_delta = [&](bool postmultiply, bool mirrored) -> Transform3d {
+        const Vec3d signs(1., mirrored ? -1. : 1., mirrored ? -1. : 1.);
+        const Transform3d before = Geometry::rotation_transform(previous_rotation->cwiseProduct(signs));
+        const Transform3d after = Geometry::rotation_transform(rotation.cwiseProduct(signs));
+        return postmultiply ? before.inverse() * after : after * before.inverse();
+    };
+    const Transform3d world_delta = previous_rotation ? target_delta(false, false) : Geometry::rotation_transform(rotation);
 
     for (unsigned int i : m_list) {
-        Transform3d rotation_matrix = Geometry::rotation_transform(rotation);
+        Transform3d rotation_matrix = world_delta;
         GLVolume& v = *(*m_volumes)[i];
         const VolumeCache& volume_data = m_cache.volumes_data[i];
         const Geometry::Transformation& inst_trafo = volume_data.get_instance_transform();
@@ -1034,9 +1041,11 @@ void Selection::rotate(const Vec3d& rotation, TransformationType transformation_
                     Geometry::TransformationSVD inst_svd(inst_trafo);
                     inst_rotation_matrix = inst_svd.u * inst_svd.v.transpose();
                     // ensure the rotation has the proper direction
-                    if (!rotation.normalized().cwiseAbs().isApprox(Vec3d::UnitX()))
+                    if (!previous_rotation && !rotation.normalized().cwiseAbs().isApprox(Vec3d::UnitX()))
                         rotation_matrix = rotation_matrix.inverse();
                 }
+                if (previous_rotation)
+                    rotation_matrix = target_delta(true, inst_trafo.is_left_handed());
 
                 const Transform3d inst_matrix_no_offset = inst_trafo.get_matrix_no_offset();
                 rotation_matrix = inst_matrix_no_offset.inverse() * inst_rotation_matrix * rotation_matrix * inst_rotation_matrix.inverse() * inst_matrix_no_offset;
@@ -1083,9 +1092,11 @@ void Selection::rotate(const Vec3d& rotation, TransformationType transformation_
                             Geometry::TransformationSVD vol_svd(vol_trafo);
                             vol_rotation_matrix = vol_svd.u * vol_svd.v.transpose();
                             // ensure the rotation has the proper direction
-                            if (!rotation.normalized().cwiseAbs().isApprox(Vec3d::UnitX()))
+                            if (!previous_rotation && !rotation.normalized().cwiseAbs().isApprox(Vec3d::UnitX()))
                                 rotation_matrix = rotation_matrix.inverse();
                         }
+                        if (previous_rotation)
+                            rotation_matrix = target_delta(true, vol_trafo.is_left_handed());
                         rotation_matrix = vol_matrix_no_offset.inverse() * inst_scale_matrix.inverse() * vol_rotation_matrix * rotation_matrix *
                             vol_rotation_matrix.inverse() * inst_scale_matrix * vol_matrix_no_offset;
                     }
@@ -1099,9 +1110,10 @@ void Selection::rotate(const Vec3d& rotation, TransformationType transformation_
     if (m_mode == Instance) {
         int rot_axis_max = 0;
         rotation.cwiseAbs().maxCoeff(&rot_axis_max);
+        const bool world_tilt = previous_rotation ? !world_delta.linear().col(2).isApprox(Vec3d::UnitZ()) : rot_axis_max != 2;
         const SyncRotationType type = (transformation_type.instance() && requires_general_synchronization) ||
-                                      (!transformation_type.instance() && rot_axis_max != 2) ||
-                                      rotation.isApprox(Vec3d::Zero()) ?
+                                      (!transformation_type.instance() && world_tilt) ||
+                                      (!previous_rotation && rotation.isApprox(Vec3d::Zero())) ?
             SyncRotationType::GENERAL : SyncRotationType::NONE;
         synchronize_unselected_instances(type);
     }
