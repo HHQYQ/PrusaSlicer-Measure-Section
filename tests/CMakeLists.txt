@@ -45,6 +45,13 @@ if (WIN32)
 endif ()
 add_test(NAME view_transparency_tests COMMAND view_transparency_tests)
 
+add_executable(measure_reference_tests libslic3r/test_measure_references.cpp)
+target_link_libraries(measure_reference_tests PRIVATE libslic3r)
+if (WIN32)
+    prusaslicer_copy_dlls(measure_reference_tests)
+endif ()
+add_test(NAME measure_reference_tests COMMAND measure_reference_tests)
+
 if (SLIC3R_GUI)
     add_subdirectory(slic3rutils)
 endif()

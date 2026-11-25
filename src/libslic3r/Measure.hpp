@@ -100,6 +100,20 @@ private:
 // Construct the circumcircle of three distinct points in world coordinates.
 std::optional<SurfaceFeature> circle_from_three_points(const Vec3d& a, const Vec3d& b, const Vec3d& c);
 
+struct CircleComparison {
+    Vec3d delta;
+    double center_distance;
+    double radial_offset;  // Center distance projected into the reference circle's plane.
+    double axial_offset;   // Magnitude along the reference circle's normal.
+    double diameter_difference;
+    double normal_angle;  // Radians, independent of three-point winding.
+};
+
+CircleComparison compare_circles(const SurfaceFeature& reference, const SurfaceFeature& current);
+
+// Slope measured from the horizontal, in radians, for a downward-facing surface.
+std::optional<double> overhang_slope(const Vec3d& normal);
+
 class MeasuringImpl;
 
 
@@ -113,6 +127,7 @@ public:
     // Given a face_idx where the mouse cursor points, return a feature that
     // should be highlighted (if any).
     std::optional<SurfaceFeature> get_feature(size_t face_idx, const Vec3d& point) const;
+    std::optional<SurfaceFeature> get_plane(size_t face_idx) const;
 
     // Return total number of planes.
     int get_num_of_planes() const;

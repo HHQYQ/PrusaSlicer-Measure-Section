@@ -10,6 +10,7 @@
 #include "slic3r/GUI/I18N.hpp"
 #include "slic3r/GUI/ImGuiWrapper.hpp"
 #include "slic3r/GUI/Plater.hpp"
+#include "slic3r/GUI/TransparentFacePicking.hpp"
 
 #include <GL/glew.h>
 #include <wx/glcanvas.h>
@@ -187,6 +188,7 @@ void GLGizmoTransparency::pick_face(const Vec2d &mouse)
     const GLVolume *best = nullptr;
     size_t seed = 0;
     double closest = -std::numeric_limits<double>::infinity();
+    bool best_translucent = true;
     for (const GLVolume *scene : m_parent.get_volumes().volumes) {
         if (!scene->is_active || !scene->mesh_raycaster || scene->volume_idx() < 0 || scene->object_idx() < 0 || scene->instance_idx() < 0)
             continue;
@@ -198,20 +200,31 @@ void GLGizmoTransparency::pick_face(const Vec2d &mouse)
         auto body = view.bodies.find(volume.id().id);
         const bool detailed = body != view.bodies.end() && body->second.detailed() &&
             mesh_cache(volume).signature == body->second.mesh_signature;
-        const auto accept = [&](size_t facet) {
-            const int alpha = body == view.bodies.end() ? view.percent : body->second.effective(view.percent, facet, detailed);
-            return m_through ? alpha == 0 : alpha < 100;
+        const auto percent = [&](size_t facet) {
+            return body == view.bodies.end() ? view.percent : body->second.effective(view.percent, facet, detailed);
         };
         Vec3f p, n;
         size_t facet;
         const auto world = scene->world_matrix();
-        if (scene->mesh_raycaster->closest_hit(mouse, world, camera, p, n, first_plane, &facet, second_plane, accept, true)) {
-            const double depth = (camera.get_view_matrix() * (world * p.cast<double>())).z();
-            if (depth > closest) {
-                closest = depth;
-                best = scene;
-                seed = facet;
-            }
+        bool translucent = false;
+        if (m_through) {
+            const auto picked = pick_through_transparency(*scene->mesh_raycaster, mouse, world, camera,
+                percent, first_plane, second_plane);
+            if (!picked)
+                continue;
+            p = picked->position;
+            facet = picked->facet;
+            translucent = picked->translucent;
+        } else if (!scene->mesh_raycaster->closest_hit(mouse, world, camera, p, n, first_plane, &facet,
+                    second_plane, [&](size_t i) { return percent(i) < 100; }, true)) {
+            continue;
+        }
+        const double depth = (camera.get_view_matrix() * (world * p.cast<double>())).z();
+        if (!best || (translucent == best_translucent ? depth > closest : !translucent)) {
+            closest = depth;
+            best = scene;
+            seed = facet;
+            best_translucent = translucent;
         }
     }
     if (!best || best->object_idx() != t->object_index || best->instance_idx() != t->instance_index) {

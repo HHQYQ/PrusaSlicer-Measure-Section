@@ -57,6 +57,23 @@ std::optional<SurfaceFeature> circle_from_three_points(const Vec3d& a, const Vec
     return SurfaceFeature(SurfaceFeatureType::Circle, center, normal, std::nullopt, radius);
 }
 
+CircleComparison compare_circles(const SurfaceFeature& reference, const SurfaceFeature& current)
+{
+    const auto [center1, radius1, normal1] = reference.get_circle();
+    const auto [center2, radius2, normal2] = current.get_circle();
+    const Vec3d delta = center2 - center1;
+    const double axial = delta.dot(normal1);
+    return {delta, delta.norm(), (delta - axial * normal1).norm(), std::abs(axial),
+        2.0 * (radius2 - radius1), std::atan2(normal1.cross(normal2).norm(), std::abs(normal1.dot(normal2)))};
+}
+
+std::optional<double> overhang_slope(const Vec3d& normal)
+{
+    if (!normal.allFinite() || normal.z() >= 0.0)
+        return std::nullopt;
+    return std::atan2(normal.head<2>().norm(), -normal.z());
+}
+
 constexpr double feature_hover_limit = 0.5; // how close to a feature the mouse must be to highlight it
 
 static std::tuple<Vec3d, double, double> get_center_and_radius(const std::vector<Vec3d>& points, const Transform3d& trafo, const Transform3d& trafo_inv)
@@ -112,6 +129,7 @@ public:
     };
 
     std::optional<SurfaceFeature> get_feature(size_t face_idx, const Vec3d& point);
+    std::optional<SurfaceFeature> get_plane(size_t face_idx) const;
     int get_num_of_planes() const;
     const std::vector<int>& get_plane_triangle_indices(int idx) const;
     const std::vector<SurfaceFeature>& get_plane_features(unsigned int plane_id);
@@ -663,6 +681,23 @@ Measuring::~Measuring() {}
 std::optional<SurfaceFeature> Measuring::get_feature(size_t face_idx, const Vec3d& point) const
 {
     return priv->get_feature(face_idx, point);
+}
+
+std::optional<SurfaceFeature> MeasuringImpl::get_plane(size_t face_idx) const
+{
+    if (face_idx >= m_face_to_plane.size())
+        return std::nullopt;
+    const size_t plane_idx = m_face_to_plane[face_idx];
+    if (plane_idx >= m_planes.size())
+        return std::nullopt;
+    const Vec3d anchor = m_its.vertices[m_its.indices[face_idx][0]].cast<double>();
+    return SurfaceFeature(SurfaceFeatureType::Plane, m_planes[plane_idx].normal, anchor,
+        std::nullopt, double(plane_idx));
+}
+
+std::optional<SurfaceFeature> Measuring::get_plane(size_t face_idx) const
+{
+    return priv->get_plane(face_idx);
 }
 
 

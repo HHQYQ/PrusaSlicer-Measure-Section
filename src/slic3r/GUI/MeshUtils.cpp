@@ -3,6 +3,7 @@
 ///|/ PrusaSlicer is released under the terms of the AGPLv3 or higher
 ///|/
 #include "MeshUtils.hpp"
+#include "TransparentFacePicking.hpp"
 
 #include "libslic3r/Tesselate.hpp"
 #include "libslic3r/TriangleMesh.hpp"
@@ -71,12 +72,14 @@ SectionPolygon clip_section_polygon(const SectionPolygon& polygon, const Clippin
 } // namespace
 
 indexed_triangle_set clip_section_surface(const indexed_triangle_set& mesh,
-    const ClippingPlane& first, const ClippingPlane& second)
+    const ClippingPlane& first, const ClippingPlane& second, std::vector<size_t>* source_facets)
 {
     indexed_triangle_set result;
     result.indices.reserve(mesh.indices.size());
     result.vertices.reserve(mesh.vertices.size());
-    const auto append = [&result](const SectionPolygon& polygon) {
+    if (source_facets)
+        source_facets->clear();
+    const auto append = [&](const SectionPolygon& polygon, size_t facet) {
         if (polygon.size() < 3)
             return;
         const Vec3f a = polygon.front().cast<float>();
@@ -88,20 +91,23 @@ indexed_triangle_set clip_section_surface(const indexed_triangle_set& mesh,
             const int index = int(result.vertices.size());
             result.vertices.insert(result.vertices.end(), {a, b, c});
             result.indices.emplace_back(index, index + 1, index + 2);
+            if (source_facets)
+                source_facets->push_back(facet);
         }
     };
-    for (const Vec3i& face : mesh.indices) {
+    for (size_t facet = 0; facet < mesh.indices.size(); ++facet) {
+        const Vec3i& face = mesh.indices[facet];
         SectionPolygon triangle;
         for (int i = 0; i < 3; ++i)
             triangle.emplace_back(mesh.vertices[face[i]].cast<double>());
         const SectionPolygon kept = clip_section_polygon(triangle, first, true);
         if (second.is_active()) {
             // Split both visible regions along the same planes so their shared edges join.
-            append(clip_section_polygon(kept, second, true));
-            append(clip_section_polygon(kept, second, false));
-            append(clip_section_polygon(clip_section_polygon(triangle, first, false), second, true));
+            append(clip_section_polygon(kept, second, true), facet);
+            append(clip_section_polygon(kept, second, false), facet);
+            append(clip_section_polygon(clip_section_polygon(triangle, first, false), second, true), facet);
         } else {
-            append(kept);
+            append(kept, facet);
         }
     }
     return result;
@@ -519,7 +525,8 @@ void MeshRaycaster::line_from_mouse_pos(const Vec2d& mouse_pos, const Transform3
 
 bool MeshRaycaster::unproject_on_mesh(const Vec2d& mouse_pos, const Transform3d& trafo, const Camera& camera,
                                       Vec3f& position, Vec3f& normal, const ClippingPlane* clipping_plane,
-                                      size_t* facet_idx, const bool require_even_number_of_hits, const bool front_faces_only) const
+                                      size_t* facet_idx, const bool require_even_number_of_hits, const bool front_faces_only,
+                                      const std::function<bool(size_t)>& accept_facet) const
 {
     Vec3d point;
     Vec3d direction;
@@ -538,7 +545,8 @@ bool MeshRaycaster::unproject_on_mesh(const Vec2d& mouse_pos, const Transform3d&
         Vec3d transformed_hit = trafo * hits[i].position();
         if (transformed_hit.z() >= SINKING_Z_THRESHOLD &&
             (!front_faces_only || hits[i].normal().dot(direction) < 0.) &&
-            (! clipping_plane || ! clipping_plane->is_point_clipped(transformed_hit)))
+            (! clipping_plane || ! clipping_plane->is_point_clipped(transformed_hit)) &&
+            (!accept_facet || accept_facet(hits[i].face())))
             break;
     }
 
@@ -559,6 +567,32 @@ bool MeshRaycaster::unproject_on_mesh(const Vec2d& mouse_pos, const Transform3d&
 }
 
 
+
+std::optional<TransparentFaceHit> pick_through_transparency(const MeshRaycaster& raycaster,
+    const Vec2d& mouse, const Transform3d& world, const Camera& camera,
+    const std::function<int(size_t)>& transparency, const ClippingPlane* section,
+    const ClippingPlane* compound_section, bool reject_below_bed)
+{
+    Vec3d origin, direction;
+    MeshRaycaster::line_from_mouse_pos(mouse, world, camera, origin, direction);
+    std::optional<TransparentFaceHit> fallback;
+    for (const auto& hit : raycaster.get_aabb_mesh().query_ray_hits(origin, direction)) {
+        if (!hit.is_hit())
+            continue;
+        const Vec3d world_position = world * hit.position();
+        if ((reject_below_bed && world_position.z() < SINKING_Z_THRESHOLD) ||
+            (section && section->is_point_clipped(world_position) &&
+                (!compound_section || compound_section->is_point_clipped(world_position))))
+            continue;
+        const size_t facet = static_cast<size_t>(hit.face());
+        const int percent = transparency(facet);
+        if (percent == 0)
+            return TransparentFaceHit{hit.position().cast<float>(), hit.normal().cast<float>(), facet, false};
+        if (!fallback && percent < 100 && hit.is_inside())
+            fallback = TransparentFaceHit{hit.position().cast<float>(), hit.normal().cast<float>(), facet, true};
+    }
+    return fallback;
+}
 
 bool MeshRaycaster::intersects_line(Vec3d point, Vec3d direction, const Transform3d& trafo) const 
 {

@@ -78,18 +78,31 @@ class GLGizmoMeasure : public GLGizmoBase
         const ModelObject* object{ nullptr };
         const ModelInstance* instance{ nullptr };
         const ModelVolume* volume{ nullptr };
+        std::shared_ptr<const TriangleMesh> mesh;
         Transform3d world_trafo;
         unsigned int canvas_volume_idx;
 
         bool operator == (const VolumeCacheItem& other) const {
             return this->object == other.object && this->instance == other.instance && this->volume == other.volume &&
-                this->canvas_volume_idx == other.canvas_volume_idx && this->world_trafo.isApprox(other.world_trafo);
+                this->mesh == other.mesh && this->canvas_volume_idx == other.canvas_volume_idx &&
+                this->world_trafo.isApprox(other.world_trafo);
         }
     };
 
     std::vector<VolumeCacheItem> m_volumes_cache;
     std::array<ClippingPlane, 2> m_section_planes;
     bool m_section_caps_visible{ false };
+    bool m_refresh_mesh{ false };
+
+    static constexpr size_t SECTION_CAP = size_t(-1);
+    struct FacetSource {
+        size_t volume;
+        size_t original_facet;
+        unsigned char transparency;
+        bool is_cap() const { return original_facet == SECTION_CAP; }
+    };
+    std::vector<FacetSource> m_facet_sources;
+    bool m_has_transparent_facets{ false };
 
     EMode m_mode{ EMode::FeatureSelection };
     Measure::MeasurementResult m_measurement_result;
@@ -134,6 +147,7 @@ class GLGizmoMeasure : public GLGizmoBase
     bool m_mouse_left_down{ false }; // for detection left_up of this gizmo
 
     Vec2d m_mouse_pos{ Vec2d::Zero() };
+    bool m_mouse_in_viewport{ false };
 
     KeyAutoRepeatFilter m_shift_kar_filter;
 
@@ -145,30 +159,69 @@ class GLGizmoMeasure : public GLGizmoBase
     void update_if_needed();
     bool unproject_measurement(const Vec2d& mouse_pos, const Camera& camera, Vec3f& hit, Vec3f& normal,
         size_t* facet, bool require_even_hits = true) const;
+    bool advanced_measurement_available() const;
+    bool can_hover() const;
+    bool section_hides(const Vec3d& position, bool from_cap) const;
 
     void disable_scene_raycasters();
     void restore_scene_raycasters_state();
 
     void render_dimensioning();
 
-    bool m_three_point_mode{ false };
-    bool m_snap_circle_vertices{ true };
-    bool m_invalid_circle_pick{ false };
-    std::vector<Vec3d> m_circle_points;
-    std::optional<Measure::SurfaceFeature> m_constructed_circle;
-    GLModel m_circle_outline;
+    enum class InputMode { Standard, Circles, CircleDistance, Perpendicular };
+    InputMode m_input_mode{ InputMode::Standard };
+    std::optional<Vec2d> m_pick_press;
+    bool m_pick_through{ false };
+    bool m_show_overhang{ false };
+    std::optional<double> m_hover_slope;
 
-    struct CirclePointPick {
+    bool m_snap_circle_vertices{ true };
+    bool m_pick_detected_circle{ false };
+    bool m_invalid_circle_pick{ false };
+
+    struct PointPick {
         Vec3d position;
         bool snapped_to_vertex;
+        bool from_cap;
+        bool section_dependent;
+        std::optional<Vec3d> normal;
     };
 
-    std::optional<CirclePointPick> pick_circle_point(const Vec2d& mouse_pos) const;
-    bool on_circle_mouse(const wxMouseEvent& event);
+    struct CircleSelection {
+        std::vector<PointPick> points;
+        std::optional<Measure::SurfaceFeature> circle;
+    };
+    CircleSelection m_current_circle;
+    CircleSelection m_first_circle;
+    std::optional<Measure::SurfaceFeature> m_hover_circle;
+    GLModel m_circle_outline;
+
+    struct PlaneReference {
+        Measure::SurfaceFeature plane;
+        Vec3d anchor;
+        FacetSource source;
+    };
+    std::optional<PlaneReference> m_reference_plane;
+    std::optional<Measure::SurfaceFeature> m_hover_plane;
+    std::optional<PointPick> m_hover_target;
+    std::optional<PointPick> m_target;
+    int m_reference_plane_index{ -1 };
+
+    std::optional<PointPick> pick_point(const Vec2d& mouse_pos, bool snap_to_vertex) const;
+    std::optional<Measure::SurfaceFeature> detected_circle(size_t face, const Vec3d& position) const;
+    bool circle_hidden(const CircleSelection& selection) const;
+    bool measures_circles() const;
+    CircleSelection& circle_to_pick();
+    void commit_circle_pick();
+    void commit_perpendicular_pick(bool snap_to_vertex);
     void render_constructed_circle();
+    void render_perpendicular();
     void render_circle_options();
+    void render_perpendicular_options();
+    void clear_reference_plane();
     void clear_circle_points();
-    void set_three_point_mode(bool enabled);
+    void undo_circle_point();
+    void set_input_mode(InputMode mode);
 
 #if ENABLE_MEASURE_GIZMO_DEBUG
     void render_debug_dialog();
@@ -183,6 +236,9 @@ public:
     /// <param name="mouse_event">Keep information about mouse click</param>
     /// <returns>Return True when use the information otherwise False.</returns>
     bool on_mouse(const wxMouseEvent &mouse_event) override;
+    bool uses_click_to_pick() const { return m_input_mode != InputMode::Standard; }
+    bool has_pending_pick() const { return m_pick_press.has_value(); }
+    void cancel_pending_pick() { m_pick_press.reset(); }
 
     void data_changed(bool is_serializing) override;
 

@@ -29675,3 +29675,111 @@ msgstr "重置所有面的透明度"
 
 msgid "Select one part instance."
 msgstr "请选择一个零件实例。"
+
+msgid "Measurement mode"
+msgstr "测量模式"
+
+msgid "Standard measurement"
+msgstr "普通测量"
+
+msgid "Circle measurement"
+msgstr "圆测量"
+
+msgid "Pick detected circular edges"
+msgstr "选取已识别的圆边"
+
+msgid "Click a highlighted circular edge."
+msgstr "单击已高亮的圆边。"
+
+msgid "No circular edge was detected here."
+msgstr "这里没有识别到圆边。"
+
+msgid "Three points construct a circle even on an oval or a chamfer edge."
+msgstr "在椭圆或倒角边上取三点也能构造圆。"
+
+msgid "Current circle hidden by section."
+msgstr "当前圆已被剖切隐藏。"
+
+msgid "3D center distance"
+msgstr "三维中心距"
+
+msgid "Center offset in reference plane"
+msgstr "基准圆面内的投影距"
+
+msgid "Center offset along reference axis"
+msgstr "沿参考轴的偏移量"
+
+msgid "Diameter difference"
+msgstr "直径差"
+
+msgid "Angle between circle normals"
+msgstr "两圆面法线夹角"
+
+msgid "Swap circles"
+msgstr "交换两圆"
+
+msgid "Click a surface to lock the reference plane."
+msgstr "单击一个面锁定基准面。"
+
+msgid "Reference plane hidden by section."
+msgstr "基准面已被剖切隐藏。"
+
+msgid "Click to set or replace the target point."
+msgstr "单击设置或更换目标点。"
+
+msgid "Hold Shift to snap to a visible vertex."
+msgstr "按住 Shift 可吸附到可见顶点。"
+
+msgid "Point-to-plane distance"
+msgstr "点到基准面的垂直距"
+
+msgid "Target point hidden by section."
+msgstr "目标点已被剖切隐藏。"
+
+msgid "Angle between surfaces at the picks"
+msgstr "取点处两面夹角"
+
+msgid "Distance at cursor"
+msgstr "光标处的垂直距"
+
+msgid "Reset reference plane"
+msgstr "重设基准面"
+
+msgid "Show overhang slope"
+msgstr "显示悬垂坡角"
+
+msgid "Overhang slope from horizontal"
+msgstr "相对水平面的悬垂坡角"
+
+msgid "Circle center distance"
+msgstr "圆心距"
+
+msgid "First circle"
+msgstr "第一圆"
+
+msgid "Second circle"
+msgstr "第二圆"
+
+msgid "Select the first circle."
+msgstr "请选择第一圆。"
+
+msgid "Select the second circle."
+msgstr "请选择第二圆。"
+
+msgid "First circle hidden by section."
+msgstr "第一圆已被剖切隐藏。"
+
+msgid "Second circle hidden by section."
+msgstr "第二圆已被剖切隐藏。"
+
+msgid "Restart measurement"
+msgstr "重新测量"
+
+msgid "Reselect second circle"
+msgstr "重选第二圆"
+
+msgid "Turn this on, rotate the view to expose the underside, and hover over a downward-facing model surface to see the slope beside the pointer. The slope is measured from the horizontal build plate: a horizontal overhang is 0°, and the angle approaches 90° near vertical. Upward faces, vertical faces, and section fill have no reading. Check the sliced preview for actual supports."
+msgstr "开启后，转动视角露出模型底面。把鼠标移到朝下的模型表面，坡角会浮现在指针旁。坡角从打印平台的水平面起算，水平悬空面为 0°，越接近竖直越接近 90°。朝上表面、竖直面和剖切填充无读数。实际支撑可在切片预览中查看。"
+
+msgid "Left-click to pick. Drag with the left button to rotate, or with the right or middle button to pan. Scroll to zoom."
+msgstr "左键轻点取样，左键拖动旋转，右键或中键拖动平移，滚轮缩放。"

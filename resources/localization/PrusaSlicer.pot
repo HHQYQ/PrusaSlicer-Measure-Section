@@ -20051,3 +20051,147 @@ msgstr ""
 #: resources/data/hints.ini: [hint:Text tool]
 msgid "Text tool\nDid you know that you can add custom text labels to your models or even use the text as a modifier? Learn more in the documentation."
 msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Measurement mode"
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Standard measurement"
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Circle measurement"
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Pick detected circular edges"
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Click a highlighted circular edge."
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "No circular edge was detected here."
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Three points construct a circle even on an oval or a chamfer edge."
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Current circle hidden by section."
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "3D center distance"
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Center offset in reference plane"
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Center offset along reference axis"
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Diameter difference"
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Angle between circle normals"
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Swap circles"
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Click a surface to lock the reference plane."
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Reference plane hidden by section."
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Click to set or replace the target point."
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Hold Shift to snap to a visible vertex."
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Point-to-plane distance"
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Target point hidden by section."
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Angle between surfaces at the picks"
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Distance at cursor"
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Reset reference plane"
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Show overhang slope"
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Overhang slope from horizontal"
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Circle center distance"
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "First circle"
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Second circle"
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Select the first circle."
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Select the second circle."
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "First circle hidden by section."
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Second circle hidden by section."
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Restart measurement"
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Reselect second circle"
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Turn this on, rotate the view to expose the underside, and hover over a downward-facing model surface to see the slope beside the pointer. The slope is measured from the horizontal build plate: a horizontal overhang is 0°, and the angle approaches 90° near vertical. Upward faces, vertical faces, and section fill have no reading. Check the sliced preview for actual supports."
+msgstr ""
+
+#: src/slic3r/GUI/Gizmos/GLGizmoMeasure.cpp
+msgid "Left-click to pick. Drag with the left button to rotate, or with the right or middle button to pan. Scroll to zoom."
+msgstr ""

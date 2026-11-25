@@ -76,7 +76,7 @@ public:
 // Keep the same part of a world-space mesh as the section view. The second
 // plane, if active, removes only the intersection of the two clipped sides.
 indexed_triangle_set clip_section_surface(const indexed_triangle_set& mesh,
-    const ClippingPlane& first, const ClippingPlane& second);
+    const ClippingPlane& first, const ClippingPlane& second, std::vector<size_t>* source_facets = nullptr);
 
 // MeshClipper class cuts a mesh and is able to return a triangulated cut.
 class MeshClipper
@@ -194,7 +194,8 @@ public:
         const ClippingPlane* clipping_plane = nullptr, // clipping plane (if active)
         size_t* facet_idx = nullptr, // index of the facet hit
         bool require_even_number_of_hits = true, // When it is true, then an odd number (unclipped) of hits are ignored, and false is returned.
-        bool front_faces_only = false
+        bool front_faces_only = false,
+        const std::function<bool(size_t)>& accept_facet = {}
     ) const;
     
     const AABBMesh &get_aabb_mesh() const { return m_emesh; }

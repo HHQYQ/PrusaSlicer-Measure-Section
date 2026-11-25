@@ -55,6 +55,7 @@
 #include "slic3r/GUI/Gizmos/GLGizmoPainterBase.hpp"
 #include "slic3r/GUI/Gizmos/GLGizmoEdgeFinish.hpp"
 #include "slic3r/GUI/Gizmos/GLGizmoTransparency.hpp"
+#include "slic3r/GUI/Gizmos/GLGizmoMeasure.hpp"
 #include "slic3r/Utils/UndoRedo.hpp"
 
 #if ENABLE_RETINA_GL
@@ -3727,6 +3728,17 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
 #endif
 
     Point pos(evt.GetX(), evt.GetY());
+    auto* measure = m_gizmos.get_current_type() == GLGizmosManager::Measure
+        ? static_cast<GLGizmoMeasure*>(m_gizmos.get_current()) : nullptr;
+    const bool measure_click = measure && measure->uses_click_to_pick() &&
+        (evt.LeftDown() || evt.LeftUp() || measure->has_pending_pick());
+    const auto* imgui_context = ImGui::GetCurrentContext();
+    // ImGui's capture flag can keep pointing to the owner of an in-progress drag.
+    const bool over_panel = measure_click && imgui_context &&
+        std::any_of(imgui_context->Windows.begin(), imgui_context->Windows.end(), [&](const ImGuiWindow* window) {
+            return window->Active && !window->Hidden && !(window->Flags & ImGuiWindowFlags_NoMouseInputs) &&
+                window->OuterRectClipped.Contains(ImVec2(float(pos.x()), float(pos.y())));
+        });
 
     static wxTimer s_virtual_bed_timer;
     s_virtual_bed_timer.Bind(wxEVT_TIMER, [this](wxTimerEvent&) { s_multiple_beds.request_next_bed(true); schedule_extra_frame(100); });
@@ -3736,7 +3748,11 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
         // ignore left up events coming from imgui windows and not processed by them
         m_mouse.ignore_left_up = true;
     m_tooltip.set_in_imgui(false);
-    if (imgui->update_mouse_data(evt)) {
+    if (imgui->update_mouse_data(evt) || over_panel) {
+        if (measure)
+            measure->cancel_pending_pick();
+        if (measure_click && evt.LeftUp() && !m_mouse.dragging)
+            mouse_up_cleanup();
         m_mouse.position = evt.Leaving() ? Vec2d(-1.0, -1.0) : pos.cast<double>();
         m_tooltip.set_in_imgui(true);
         render();
@@ -3843,7 +3859,7 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
     bool any_gizmo_active = m_gizmos.get_current() != nullptr;
     const auto *transparency = dynamic_cast<const GLGizmoTransparency*>(m_gizmos.get_current());
     const bool mesh_feature_picking = m_gizmos.get_current_type() == GLGizmosManager::EdgeFinish ||
-        (transparency && transparency->picking_faces());
+        (transparency && transparency->picking_faces()) || (measure && measure->uses_click_to_pick());
 
     int selected_object_idx = m_selection.get_object_idx();
     int layer_editing_object_idx = is_layers_editing_enabled() ? selected_object_idx : -1;
@@ -4056,6 +4072,11 @@ void GLCanvas3D::on_mouse(wxMouseEvent& evt)
         m_dirty = true;
     }
     else if (evt.Dragging()) {
+        if (evt.LeftIsDown() && measure && measure->has_pending_pick()) {
+            // The gizmo will release this gesture to the camera once it passes the click threshold.
+            m_mouse.position = pos.cast<double>();
+            return;
+        }
         m_mouse.dragging = true;
 
         if (m_layers_editing.state != LayersEditing::Unknown && layer_editing_object_idx != -1) {
@@ -4800,6 +4821,8 @@ void GLCanvas3D::update_tooltip_for_settings_item_in_main_toolbar()
 
 void GLCanvas3D::mouse_up_cleanup()
 {
+    if (m_gizmos.get_current_type() == GLGizmosManager::Measure)
+        static_cast<GLGizmoMeasure*>(m_gizmos.get_current())->cancel_pending_pick();
     m_moving = false;
     m_mouse.drag.move_volume_idx = -1;
     m_mouse.set_start_position_3D_as_invalid();

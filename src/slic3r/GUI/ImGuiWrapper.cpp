@@ -1146,6 +1146,8 @@ void ImGuiWrapper::init_font(bool compress)
     builder.AddRanges(m_glyph_ranges);
 
     builder.AddChar(ImWchar(0x2026)); // …
+    builder.AddChar(ImWchar(0x0394)); // Δ in measurement dimensions
+    builder.AddChar(ImWchar(0x03B1)); // α in measurement angles
 
     if (s_font_cjk) {
         // https://github.com/prusa3d/PrusaSlicer/issues/8171: The translation
